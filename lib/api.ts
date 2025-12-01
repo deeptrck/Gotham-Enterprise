@@ -39,6 +39,24 @@ export async function fetchScans() {
   }
 }
 
+/**
+ * Fetch dashboard data (scans + credits) in a single API call
+ * More efficient than calling fetchScans() and fetchUserCredits() separately
+ */
+export async function fetchDashboardData() {
+  try {
+    const response = await fetch("/api/users/dashboard", { method: "GET", credentials: "include" });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      throw new Error(errBody?.error || "Failed to fetch dashboard data");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    throw error;
+  }
+}
+
 import type { CreateScanInput } from "@/lib/types";
 
 export async function createScan(scanData: CreateScanInput) {

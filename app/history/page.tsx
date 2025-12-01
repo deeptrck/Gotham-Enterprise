@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -16,12 +16,6 @@ type ScanRecord = {
   createdAt: string;
 };
 
-const defaultScans: ScanRecord[] = [
-  { _id: "1", scanId: "1", fileName: "press_confrence_1", date: "Sep 21, 14:30", status: "Authentic", createdAt: "" },
-  { _id: "2", scanId: "2", fileName: "press_confrence_2", date: "Sep 21, 14:30", status: "Authentic", createdAt: "" },
-  { _id: "3", scanId: "3", fileName: "press_confrence_3", date: "Sep 21, 14:30", status: "Suspicious", createdAt: "" },
-];
-
 const statusColors: Record<ScanRecord["status"], string> = {
   Authentic: "text-green-600 dark:text-green-400",
   Suspicious: "text-yellow-600 dark:text-yellow-400",
@@ -32,10 +26,23 @@ const tabs = ["All scans", "Authentic", "Suspicious", "Deepfake"];
 
 export default function HistoryPage() {
   const [activeTab, setActiveTab] = useState<string>("All scans");
-  const [scans, setScans] = useState<ScanRecord[]>(defaultScans);
+  const [scans, setScans] = useState<ScanRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const { isSignedIn } = useUser();
+
+  // Memoized data formatting
+  const formatScans = useCallback((data: any[]): ScanRecord[] => {
+    return data.map((scan) => ({
+      _id: scan._id,
+      scanId: scan.scanId,
+      fileName: scan.fileName,
+      date: new Date(scan.createdAt).toLocaleDateString(),
+      status: scan.status.toLowerCase() === "authentic" ? "Authentic" :
+              scan.status.toLowerCase() === "suspicious" ? "Suspicious" : "Deepfake",
+      createdAt: scan.createdAt,
+    }));
+  }, []);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -44,36 +51,118 @@ export default function HistoryPage() {
       try {
         setLoading(true);
         const data = await fetchScans();
-        type ApiScan = { _id: string; scanId: string; fileName: string; createdAt: string; status: string };
-        const formattedScans: ScanRecord[] = (data as ApiScan[]).map((scan) => ({
-          _id: scan._id,
-          scanId: scan.scanId,
-          fileName: scan.fileName,
-          date: new Date(scan.createdAt).toLocaleDateString(),
-          status: scan.status.toLowerCase() === "authentic" ? "Authentic" :
-                  scan.status.toLowerCase() === "suspicious" ? "Suspicious" : "Deepfake",
-          createdAt: scan.createdAt,
-        }));
-        setScans(formattedScans);
+        setScans(formatScans(data));
       } catch (error) {
         console.error("Failed to load scans:", error);
-        setScans(defaultScans);
+        setScans([]);
       } finally {
         setLoading(false);
       }
     };
 
     loadScans();
-  }, [isSignedIn]);
+  }, [isSignedIn, formatScans]);
 
-  const filteredScans =
-    activeTab === "All scans"
+  // Memoized filtered scans
+  const filteredScans = useMemo(() => {
+    return activeTab === "All scans"
       ? scans
       : scans.filter((scan: ScanRecord) => scan.status === activeTab);
+  }, [scans, activeTab]);
 
-  const handleViewResults = (scanId: string) => {
+  const handleViewResults = useCallback((scanId: string) => {
     router.push(`/results/${scanId}`);
-  };
+  }, [router]);
+
+  // Memoized tab buttons to prevent unnecessary re-renders
+  const tabButtons = useMemo(() => 
+    tabs.map((tab) => (
+      <button
+        key={tab}
+        onClick={() => setActiveTab(tab)}
+        className={`pb-2 text-sm font-medium transition-colors ${
+          activeTab === tab
+            ? "border-b-2 border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+            : "text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+        }`}
+      >
+        {tab}
+      </button>
+    )), [activeTab]
+  );
+
+  // Memoized table rows
+  const tableRows = useMemo(() => {
+    if (filteredScans.length === 0) {
+      return (
+        <tr>
+          <td
+            colSpan={4}
+            className="text-center py-6 text-gray-500 dark:text-gray-400 text-sm italic"
+          >
+            No scans found for this category.
+          </td>
+        </tr>
+      );
+    }
+
+    return filteredScans.map((scan: ScanRecord) => (
+      <tr
+        key={scan._id}
+        className="
+          bg-white dark:bg-black 
+          shadow-sm rounded-md overflow-hidden
+          border border-gray-200 dark:border-transparent
+        "
+      >
+        <td className="px-4 py-3 font-medium truncate max-w-xs" title={scan.fileName}>
+          {scan.fileName}
+        </td>
+        <td className="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+          {scan.date}
+        </td>
+        <td className={`px-4 py-3 font-semibold whitespace-nowrap ${statusColors[scan.status]}`}>
+          {scan.status}
+        </td>
+        <td className="px-4 py-3 text-center">
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button 
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                aria-label="Open actions menu"
+              >
+                <ChevronDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </button>
+            </DropdownMenu.Trigger>
+
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                sideOffset={4}
+                className="
+                  bg-white dark:bg-black 
+                  rounded-md shadow-lg 
+                  border border-gray-200 dark:border-gray-800
+                  py-1 min-w-[150px] text-sm z-50
+                "
+              >
+                <DropdownMenu.Item
+                  onClick={() => handleViewResults(scan.scanId)}
+                  className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white outline-none"
+                >
+                  View Results
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white outline-none"
+                >
+                  Download Report
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </td>
+      </tr>
+    ));
+  }, [filteredScans, handleViewResults]);
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white">
@@ -86,99 +175,34 @@ export default function HistoryPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-800">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-2 text-sm font-medium transition-colors ${
-                activeTab === tab
-                  ? "border-b-2 border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-                  : "text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-800 overflow-x-auto">
+          {tabButtons}
         </div>
 
-        {loading && <p className="text-center text-gray-500 dark:text-gray-400">Loading...</p>}
+        {loading && (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        )}
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-3">
-            <thead>
-              <tr className="text-left text-sm text-gray-500 dark:text-gray-400">
-                <th className="px-4">Name</th>
-                <th className="px-4">Date</th>
-                <th className="px-4">Status</th>
-                <th className="px-4 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredScans.length > 0 ? (
-                filteredScans.map((scan: ScanRecord) => (
-                  <tr
-                    key={scan._id}
-                    className="
-                      bg-white dark:bg-black 
-                      shadow-sm rounded-md overflow-hidden
-                      border border-gray-200 dark:border-transparent
-                    "
-                  >
-                    <td className="px-4 py-3 font-medium">{scan.fileName}</td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{scan.date}</td>
-                    <td className={`px-4 py-3 font-semibold ${statusColors[scan.status]}`}>
-                      {scan.status}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900">
-                            <ChevronDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                          </button>
-                        </DropdownMenu.Trigger>
-
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            sideOffset={4}
-                            className="
-                              bg-white dark:bg-black 
-                              rounded-md shadow-md 
-                              border border-gray-200 dark:border-transparent
-                              py-1 min-w-[150px] text-sm
-                            "
-                          >
-                            <DropdownMenu.Item
-                              onClick={() => handleViewResults(scan.scanId)}
-                              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
-                            >
-                              View Results
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
-                            >
-                              Download Report
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="text-center py-6 text-gray-500 dark:text-gray-400 text-sm italic"
-                  >
-                    No scans found for this category.
-                  </td>
+        {!loading && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-y-3">
+              <thead>
+                <tr className="text-left text-sm text-gray-500 dark:text-gray-400">
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2 whitespace-nowrap">Date</th>
+                  <th className="px-4 py-2">Status</th>
+                  <th className="px-4 py-2 text-center">Action</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {tableRows}
+              </tbody>
+            </table>
+          </div>
+        )}
       </main>
     </div>
   );
