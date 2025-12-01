@@ -141,7 +141,7 @@ export default function Header() {
 
       {/* Mobile menu (hamburger) */}
       <div className="flex md:hidden items-center gap-2">
-        <ThemeToggle />
+        {/* <ThemeToggle /> */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon">
