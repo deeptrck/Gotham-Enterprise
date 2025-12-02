@@ -75,13 +75,14 @@ export default function HistoryPage() {
   const handleDownload = async (scanId: string) => {
     try {
       const scanData = await fetchResult(scanId);
+      const pdfDto = mapToPdfDto(scanData);
 
-      if (!scanData) {
-        console.error("No scan data found for", scanId);
+      if (!pdfDto) {
+        console.error("Cannot generate PDF: invalid scan data", scanData);
         return;
       }
 
-      handleDownloadPDF(mapToPdfDto(scanData));
+      handleDownloadPDF(pdfDto);
     } catch (err) {
       console.error("Failed to download PDF:", err);
     }
