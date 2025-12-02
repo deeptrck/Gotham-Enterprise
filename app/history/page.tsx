@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -32,19 +32,6 @@ export default function HistoryPage() {
   const router = useRouter();
   const { isSignedIn } = useUser();
 
-  // Memoized data formatting
-  const formatScans = useCallback((data: any[]): ScanRecord[] => {
-    return data.map((scan) => ({
-      _id: scan._id,
-      scanId: scan.scanId,
-      fileName: scan.fileName,
-      date: new Date(scan.createdAt).toLocaleDateString(),
-      status: scan.status.toLowerCase() === "authentic" ? "Authentic" :
-              scan.status.toLowerCase() === "suspicious" ? "Suspicious" : "Deepfake",
-      createdAt: scan.createdAt,
-    }));
-  }, []);
-
   useEffect(() => {
     if (!isSignedIn) return;
 
@@ -52,7 +39,21 @@ export default function HistoryPage() {
       try {
         setLoading(true);
         const data = await fetchScans();
-        setScans(formatScans(data));
+        type ApiScan = { _id: string; scanId: string; fileName: string; createdAt: string; status: string };
+        const formattedScans: ScanRecord[] = (data as ApiScan[]).map((scan) => ({
+          _id: scan._id,
+          scanId: scan.scanId,
+          fileName: scan.fileName,
+          date: new Date(scan.createdAt).toLocaleDateString(),
+          status:
+            scan.status.toLowerCase() === "authentic"
+              ? "Authentic"
+              : scan.status.toLowerCase() === "suspicious"
+              ? "Suspicious"
+              : "Deepfake",
+          createdAt: scan.createdAt,
+        }));
+        setScans(formattedScans);
       } catch (error) {
         console.error("Failed to load scans:", error);
         setScans([]);
@@ -62,16 +63,28 @@ export default function HistoryPage() {
     };
 
     loadScans();
-  }, [isSignedIn, formatScans]);
+  }, [isSignedIn]);
 
-  // Memoized filtered scans
-  const filteredScans = useMemo(() => {
-    return activeTab === "All scans"
-      ? scans
-      : scans.filter((scan: ScanRecord) => scan.status === activeTab);
+  const filteredScans =
+    activeTab === "All scans" ? scans : scans.filter((scan) => scan.status === activeTab);
 
-  const handleViewResults = useCallback((scanId: string) => {
+  const handleViewResults = (scanId: string) => {
     router.push(`/results/${scanId}`);
+  };
+
+  const handleDownload = async (scanId: string) => {
+    try {
+      const scanData = await fetchResult(scanId);
+
+      if (!scanData) {
+        console.error("No scan data found for", scanId);
+        return;
+      }
+
+      handleDownloadPDF(mapToPdfDto(scanData));
+    } catch (err) {
+      console.error("Failed to download PDF:", err);
+    }
   };
 
   return (
@@ -103,81 +116,74 @@ export default function HistoryPage() {
 
         {loading && <p className="text-center text-gray-500 dark:text-gray-400">Loading...</p>}
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-3">
-            <thead>
-              <tr className="text-left text-sm text-gray-500 dark:text-gray-400">
-                <th className="px-4">Name</th>
-                <th className="px-4">Date</th>
-                <th className="px-4">Status</th>
-                <th className="px-4 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredScans.length > 0 ? (
-                filteredScans.map((scan: ScanRecord) => (
-                  <tr
-                    key={scan._id}
-                    className="
-                      bg-white dark:bg-black 
-                      shadow-sm rounded-md overflow-hidden
-                      border border-gray-200 dark:border-transparent
-                    "
-                  >
-                    <td className="px-4 py-3 font-medium">{scan.fileName}</td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{scan.date}</td>
-                    <td className={`px-4 py-3 font-semibold ${statusColors[scan.status]}`}>
-                      {scan.status}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900">
-                            <ChevronDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                          </button>
-                        </DropdownMenu.Trigger>
+        {!loading && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-y-3">
+              <thead>
+                <tr className="text-left text-sm text-gray-500 dark:text-gray-400">
+                  <th className="px-4">Name</th>
+                  <th className="px-4">Date</th>
+                  <th className="px-4">Status</th>
+                  <th className="px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredScans.length > 0 ? (
+                  filteredScans.map((scan) => (
+                    <tr
+                      key={scan._id}
+                      className="bg-white dark:bg-black shadow-sm rounded-md overflow-hidden border border-gray-200 dark:border-transparent"
+                    >
+                      <td className="px-4 py-3 font-medium">{scan.fileName}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{scan.date}</td>
+                      <td className={`px-4 py-3 font-semibold ${statusColors[scan.status]}`}>
+                        {scan.status}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger asChild>
+                            <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900">
+                              <ChevronDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                            </button>
+                          </DropdownMenu.Trigger>
 
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            sideOffset={4}
-                            className="
-                              bg-white dark:bg-black 
-                              rounded-md shadow-md 
-                              border border-gray-200 dark:border-transparent
-                              py-1 min-w-[150px] text-sm
-                            "
-                          >
-                            <DropdownMenu.Item
-                              onClick={() => handleViewResults(scan.scanId)}
-                              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              sideOffset={4}
+                              className="bg-white dark:bg-black rounded-md shadow-md border border-gray-200 dark:border-transparent py-1 min-w-[150px] text-sm"
                             >
-                              View Results
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
-                            >
-                              Download Report
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
+                              <DropdownMenu.Item
+                                onClick={() => handleViewResults(scan.scanId)}
+                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
+                              >
+                                View Results
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item
+                                onClick={() => handleDownload(scan.scanId)}
+                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer text-black dark:text-white"
+                              >
+                                Download Report
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="text-center py-6 text-gray-500 dark:text-gray-400 text-sm italic"
+                    >
+                      No scans found for this category.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="text-center py-6 text-gray-500 dark:text-gray-400 text-sm italic"
-                  >
-                    No scans found for this category.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -4,3 +4,4 @@ export interface CreateScanInput {
   url?: string;
   file?: File;
 }
+

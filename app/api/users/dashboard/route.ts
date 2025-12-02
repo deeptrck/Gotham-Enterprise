@@ -5,12 +5,34 @@ import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 
 // Cache for dashboard data (in-memory; ephemeral on serverless)
-const dashboardCache = new Map<string, { data: any; timestamp: number }>();
-const DASHBOARD_CACHE_TTL = 10 * 1000; // 10 seconds — short TTL to avoid stale data and large memory growth
+const dashboardCache = new Map<string, { data: DashboardResponse; timestamp: number }>();
+const DASHBOARD_CACHE_TTL = 10 * 1000; // 10 seconds
 
-/**
- * GET endpoint to fetch dashboard data (scans + credits) in a single call
- */
+// Type for a single scan summary returned to the frontend
+type ScanSummary = {
+  _id: string;
+  scanId: string;
+  fileName: string;
+  status: string;
+  confidenceScore: number;
+  createdAt: string;
+  fileType?: string;
+  imageUrl?: string;
+};
+
+// Dashboard API response type
+type DashboardResponse = {
+  credits: number;
+  scans: ScanSummary[];
+  page: number;
+  limit: number;
+};
+
+// Type for the User document we need
+type UserDoc = {
+  credits?: number;
+};
+
 export async function GET(req: NextRequest) {
   const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   console.time(`dashboard:${reqId}:total`);
@@ -25,17 +47,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Read pagination from query params (safe defaults)
     const url = new URL(req.url);
     const pageParam = url.searchParams.get("page");
     const limitParam = url.searchParams.get("limit");
-    const page = Math.max(1, Number.isFinite(Number(pageParam)) ? Math.max(1, parseInt(pageParam || "1", 10)) : 1);
-    let limit = Number.isFinite(Number(limitParam)) ? Math.max(1, Math.min(100, parseInt(limitParam || "20", 10))) : 20;
 
-    // Check cache first. Include pagination in cache key.
+    const page = Math.max(
+      1,
+      pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1
+    );
+    const limit = Math.max(
+      1,
+      Math.min(100, limitParam ? parseInt(limitParam, 10) : 20)
+    );
+
+    // Check cache first
     const cacheKey = `dashboard:${userId}:p${page}:l${limit}`;
     const cached = dashboardCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < DASHBOARD_CACHE_TTL) {
+    if (cached && Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL) {
       console.timeEnd(`dashboard:${reqId}:total`);
       return NextResponse.json(cached.data, { status: 200 });
     }
@@ -44,30 +72,28 @@ export async function GET(req: NextRequest) {
     await connectToDatabase();
     console.timeEnd(`dashboard:${reqId}:connect`);
 
-    // Execute both queries in parallel but handle failures gracefully
-    console.time(`dashboard:${reqId}:parallel-queries`);
     const skip = (page - 1) * limit;
-    const promises = [
-      User.findOne({ clerkId: userId }).select("credits").lean(),
+
+    // Fetch user and scans in parallel
+    const [userResult, scansResult] = await Promise.allSettled([
+      User.findOne({ clerkId: userId }).select("credits").lean<UserDoc>(),
       VerificationResult.find({ userId })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-        .lean(),
-    ];
+        .lean<ScanSummary[]>(),
+    ]);
 
-    const settled = await Promise.allSettled(promises);
-    console.timeEnd(`dashboard:${reqId}:parallel-queries`);
+    const user: UserDoc | null = userResult.status === "fulfilled" ? userResult.value : null;
+    const scans: ScanSummary[] = scansResult.status === "fulfilled" ? scansResult.value : [];
 
-    const userResult = settled[0];
-    const scansResult = settled[1];
-
-    const user = userResult.status === 'fulfilled' ? (userResult.value as any) : null;
-    const scans = scansResult.status === 'fulfilled' ? (scansResult.value as any) : [];
-
-    const credits = user?.credits || 0;
-    const responseData = { credits, scans: scans || [], page, limit };
+    const responseData: DashboardResponse = {
+      credits: user?.credits ?? 0,
+      scans,
+      page,
+      limit,
+    };
 
     // Cache the response
     dashboardCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
@@ -76,10 +102,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(responseData, { status: 200 });
   } catch (error) {
     console.error(`Error fetching dashboard data [${reqId}]:`, error);
-    try { console.timeEnd(`dashboard:${reqId}:total`); } catch (e) {}
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    try {
+      console.timeEnd(`dashboard:${reqId}:total`);
+    } catch {}
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
