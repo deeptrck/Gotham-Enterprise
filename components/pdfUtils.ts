@@ -1,34 +1,73 @@
 import jsPDF from "jspdf";
 import autoTable,{ UserOptions } from "jspdf-autotable";
 
-// Lightweight DTO for PDF generation — keep this decoupled from Mongoose models
+export interface ResultData {
+  fileName: string;
+  scanId: string;
+  fileType?: string;
+  status: string;
+  confidenceScore: number;
+  createdAt: string;
+  imageUrl: string;
+  description?: string;
+}
+
+export interface RdModel {
+  name?: string;
+  status?: string;
+  score?: number;
+}
+
 export interface PdfResultDto {
   fileName?: string;
   fileType?: string;
   uploadedAt?: string | Date;
   status?: string;
-  confidenceScore?: number; // normalized to 0..1 (documented)
+  confidenceScore?: number;
   models?: Array<{ name: string; status?: string; score?: number }>;
   fileMeta?: { name?: string; type?: string; size?: number };
   description?: string;
+
+  // Missing fields that your mapper returns:
+  scanId?: string;
+  createdAt?: string | Date;
+  imageUrl?: string;
 }
 
-/**
- * Map a loosely-typed `result` (DB object or API response) into `PdfResultDto`.
- * Keeps the PDF util independent of server-side model shapes.
- */
-export function mapToPdfDto(resultData) {
+
+// Type for parsed description object
+interface ParsedDescription {
+  rd?: {
+    models?: RdModel[];
+  };
+}
+
+export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null {
   if (!resultData) return null;
 
-  let rd = null;
-  let models = [];
+  let models: RdModel[] = [];
 
   try {
-    const parsed = JSON.parse(resultData.description || "{}");
-    rd = parsed.rd || null;
-    models = rd?.models || [];
-  } catch (err) {
-    console.warn("PDF Utils: Failed to parse RD description", err);
+    const parsedRaw: unknown = JSON.parse(resultData.description || "{}");
+
+    function isParsedDescription(obj: unknown): obj is ParsedDescription {
+      return (
+        typeof obj === "object" &&
+        obj !== null &&
+        ("rd" in obj
+          ? typeof (obj as any).rd === "object" && (obj as any).rd !== null
+          : true)
+      );
+    }
+
+    if (isParsedDescription(parsedRaw)) {
+      const rdModels = parsedRaw.rd?.models;
+      if (Array.isArray(rdModels)) {
+        models = rdModels;
+      }
+    }
+  } catch {
+    console.warn("PDF Utils: Failed to parse RD description");
   }
 
   return {
@@ -39,11 +78,11 @@ export function mapToPdfDto(resultData) {
     confidenceScore: resultData.confidenceScore,
     createdAt: resultData.createdAt,
     imageUrl: resultData.imageUrl,
-    models: models.map(m => ({
-      name: m.name || "Unknown Model",
-      status: m.status || "UNKNOWN",
-      score: typeof m.score === "number" ? m.score : 0
-    }))
+    models: models.map((m) => ({
+      name: m.name ?? "Unknown Model",
+      status: m.status ?? "UNKNOWN",
+      score: typeof m.score === "number" ? m.score : 0,
+    })),
   };
 }
 

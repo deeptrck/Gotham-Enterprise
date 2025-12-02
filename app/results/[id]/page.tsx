@@ -125,10 +125,14 @@ useEffect(() => {
       <main className="max-w-6xl mx-auto w-full px-6 pb-16">
         {/* Download Button */}
         <div className="flex justify-end mb-6">
-        <button
-          disabled={!resultData}
-          onClick={() => handleDownloadPDF(mapToPdfDto(resultData!))}
-        >
+      <button
+onClick={() => {
+    if (!resultData) return;
+    const dto = mapToPdfDto(resultData);
+    if (!dto) return;
+    handleDownloadPDF(dto);
+  }}        className="flex items-center gap-2 px-5 py-2.5 bg-sky-400 text-white rounded-lg shadow-md hover:bg-sky-500 transition"
+      >
         <FileDown className="w-4 h-4" />
         Download PDF
       </button>
