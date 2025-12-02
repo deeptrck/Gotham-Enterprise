@@ -35,11 +35,12 @@ export interface PdfResultDto {
 }
 
 
-// Type for parsed description object
+interface RdModelsContainer {
+  models?: RdModel[];
+}
+
 interface ParsedDescription {
-  rd?: {
-    models?: RdModel[];
-  };
+  rd?: RdModelsContainer;
 }
 
 export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null {
@@ -50,21 +51,20 @@ export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null 
   try {
     const parsedRaw: unknown = JSON.parse(resultData.description || "{}");
 
+    // Type guard for object with optional "rd" containing models array
     function isParsedDescription(obj: unknown): obj is ParsedDescription {
-      return (
-        typeof obj === "object" &&
-        obj !== null &&
-        ("rd" in obj
-          ? typeof (obj as any).rd === "object" && (obj as any).rd !== null
-          : true)
-      );
+      if (typeof obj !== "object" || obj === null) return false;
+
+      const maybeRd = (obj as { rd?: unknown }).rd;
+      if (maybeRd === undefined) return true; // rd is optional
+      if (typeof maybeRd !== "object" || maybeRd === null) return false;
+
+      const maybeModels = (maybeRd as { models?: unknown }).models;
+      return maybeModels === undefined || Array.isArray(maybeModels);
     }
 
     if (isParsedDescription(parsedRaw)) {
-      const rdModels = parsedRaw.rd?.models;
-      if (Array.isArray(rdModels)) {
-        models = rdModels;
-      }
+      models = parsedRaw.rd?.models ?? [];
     }
   } catch {
     console.warn("PDF Utils: Failed to parse RD description");
