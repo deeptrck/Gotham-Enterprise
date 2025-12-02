@@ -265,7 +265,7 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
-        <Button variant="outline" className="w-full">View All Scans</Button>
+        <Button variant="outline" className="w-full" onClick={() => (window.location.href = "/history")}>View All Scans</Button>
       </>
     );
   }, [recentScans, loading]);
