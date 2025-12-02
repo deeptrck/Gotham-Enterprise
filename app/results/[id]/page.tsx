@@ -38,7 +38,6 @@ const modelMap: Record<string, { label: string; description: string }> = {
 export default function ResultsPage() {
   const { id } = useParams();
   const { isSignedIn } = useUser();
-
   const [resultData, setResultData] = useState<ResultData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +57,14 @@ useEffect(() => {
 
   const load = async () => {
     try {
-      const data = await fetchResult(id);
+    const scanId = Array.isArray(id) ? id[0] : id;
+
+    if (!scanId) {
+      console.error("No scan ID provided");
+      return;
+    }
+
+    const data = await fetchResult(scanId);
 
       let parsed: ParsedDescription = {};
       try {
