@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Eye, FileText, TrendingUp, Wallet } from "lucide-react";
-import { fetchScans } from "@/lib/api";
+import { fetchDashboardData } from "@/lib/api";
 
 const EMPTY_WEEK = [
   { day: "Mon", Authentic: 0, Suspicious: 0, Deepfake: 0 },
@@ -19,168 +19,159 @@ const EMPTY_WEEK = [
   { day: "Sun", Authentic: 0, Suspicious: 0, Deepfake: 0 },
 ];
 
-async function fetchUserCredits() {
-  try {
-    const res = await fetch("/api/users/sync", { method: "GET", credentials: "include" });
-    if (!res.ok) return 0;
-    const user = await res.json();
-    return user?.credits || 0;
-  } catch {
-    return 0;
-  }
-}
+type FilterType = "7" | "30" | "month" | "all";
+
+type RecentScan = {
+  name: string;
+  status: string;
+  color: string;
+  confidence: string;
+  time: string;
+};
+
+type ApiScan = {
+  createdAt: string;
+  fileName?: string;
+  status?: string;
+  confidenceScore?: number;
+  [key: string]: unknown;
+};
+
+const titleMap: Record<FilterType, string> = {
+  "7": "Weekly Usage",
+  "30": "30-Day Usage",
+  month: "Monthly Usage",
+  all: "General Usage",
+};
+
+const filterOptions = [
+  { key: "7" as FilterType, label: "Past 7 days" },
+  { key: "30" as FilterType, label: "Past 30 days" },
+  { key: "month" as FilterType, label: "This month" },
+  { key: "all" as FilterType, label: "All time" },
+];
 
 export default function Dashboard() {
   const { isSignedIn } = useUser();
-
-  type FilterType = "7" | "30" | "month" | "all";
-
-  type RecentScan = {
-    name: string;
-    status: string;
-    color: string;
-    confidence: string;
-    time: string;
-  };
-  type ApiScan = {
-    createdAt: string;
-    fileName?: string;
-    status?: string;
-    confidenceScore?: number;
-    [key: string]: unknown;
-  };
-
   const [allScans, setAllScans] = useState<ApiScan[]>([]);
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [userCredits, setUserCredits] = useState(0);
   const [loading, setLoading] = useState(true);
-
   const [usageData, setUsageData] = useState(EMPTY_WEEK);
   const [filter, setFilter] = useState<FilterType>("7");
 
-  const titleMap: Record<FilterType, string> = {
-    "7": "Weekly Usage",
-    "30": "30-Day Usage",
-    month: "Monthly Usage",
-    all: "General Usage",
-  };
+  // Memoized filter function
+  const applyDateFilter = useCallback((date: Date) => {
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  // Filter function (wrapped in useCallback)
-  const applyDateFilter = useCallback(
-    (date: Date) => {
-      const now = new Date();
+    switch (filter) {
+      case "7":
+        return diffDays <= 7;
+      case "30":
+        return diffDays <= 30;
+      case "month":
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      default:
+        return true;
+    }
+  }, [filter]);
 
-      if (filter === "7") return (now.getTime() - date.getTime()) / 86400000 <= 7;
-      if (filter === "30") return (now.getTime() - date.getTime()) / 86400000 <= 30;
-      if (filter === "month") return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  // Memoized usage data builder
+  const buildUsage = useCallback((scans: ApiScan[]) => {
+    const now = new Date();
+    let labels: string[] = [];
 
-      return true; // "all"
-    },
-    [filter]
-  );
-
-  // Build usage dynamically for chart
-  const buildUsage = useCallback(
-    (scans: ApiScan[]) => {
-      const now = new Date();
-      let labels: string[] = [];
-
-      // 1️⃣ Generate labels dynamically based on filter
-      if (filter === "7") {
-        // Past 7 days
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(now);
-          d.setDate(now.getDate() - i);
-          labels.push(d.toLocaleDateString("en-US", { weekday: "short" })); // "Mon", "Tue", etc.
-        }
-      } else if (filter === "30") {
-        // Past 30 days
-        for (let i = 29; i >= 0; i--) {
-          const d = new Date(now);
-          d.setDate(now.getDate() - i);
-          labels.push(d.toLocaleDateString("en-US", { day: "numeric", month: "short" })); // "27 Nov"
-        }
-      } else if (filter === "month") {
-        // Current month
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        for (let i = 1; i <= daysInMonth; i++) {
-          const d = new Date(now.getFullYear(), now.getMonth(), i);
-          labels.push(d.toLocaleDateString("en-US", { day: "numeric", month: "short" })); // "1 Nov"
-        }
-      } else {
-        // "all" - unique dates from scans
-        const uniqueDates = Array.from(
-          new Set(scans.map((s) => new Date(s.createdAt).toLocaleDateString("en-US", { day: "numeric", month: "short" })))
-        );
-        labels = uniqueDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    // Generate labels based on filter
+    if (filter === "7") {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        labels.push(d.toLocaleDateString("en-US", { weekday: "short" }));
       }
+    } else if (filter === "30") {
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        labels.push(d.toLocaleDateString("en-US", { day: "numeric", month: "short" }));
+      }
+    } else if (filter === "month") {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        labels.push(new Date(now.getFullYear(), now.getMonth(), i).toLocaleDateString("en-US", { day: "numeric", month: "short" }));
+      }
+    } else {
+      const uniqueDates = Array.from(
+        new Set(scans.map((s) => new Date(s.createdAt).toLocaleDateString("en-US", { day: "numeric", month: "short" })))
+      );
+      labels = uniqueDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    }
 
-      // 2️⃣ Initialize usage array
-      const usage = labels.map((label) => ({
-        day: label,
-        Authentic: 0,
-        Suspicious: 0,
-        Deepfake: 0,
-      }));
+    // Initialize usage array with pre-allocated objects
+    const usage = labels.map((label) => ({
+      day: label,
+      Authentic: 0,
+      Suspicious: 0,
+      Deepfake: 0,
+    }));
 
-      // 3️⃣ Count scans per label
-      scans.forEach((scan) => {
-        const date = new Date(scan.createdAt);
-        if (!applyDateFilter(date)) return;
+    // Count scans - using a Map for faster lookups
+    const usageMap = new Map(usage.map(item => [item.day, item]));
+    
+    scans.forEach((scan) => {
+      const date = new Date(scan.createdAt);
+      if (!applyDateFilter(date)) return;
 
-        let label = "";
-        if (filter === "7") {
-          label = date.toLocaleDateString("en-US", { weekday: "short" });
-        } else {
-          label = date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
-        }
+      const label = filter === "7" 
+        ? date.toLocaleDateString("en-US", { weekday: "short" })
+        : date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
 
-        const item = usage.find((d) => d.day === label);
-        if (!item) return;
+      const item = usageMap.get(label);
+      if (!item) return;
 
-        const st = String(scan.status || "");
-        if (st === "AUTHENTIC") item.Authentic++;
-        else if (st === "SUSPICIOUS") item.Suspicious++;
-        else item.Deepfake++;
-      });
+      const status = String(scan.status || "").toUpperCase();
+      if (status === "AUTHENTIC") item.Authentic++;
+      else if (status === "SUSPICIOUS") item.Suspicious++;
+      else if (status === "DEEPFAKE") item.Deepfake++;
+    });
 
-      return usage;
-    },
-    [filter, applyDateFilter]
-  );
+    return usage;
+  }, [filter, applyDateFilter]);
 
-  // Load scans & credits once
+  // Load data once
   useEffect(() => {
     if (!isSignedIn) return;
 
     const loadData = async () => {
       try {
         setLoading(true);
-
-        const scans = await fetchScans();
-        const credits = await fetchUserCredits();
+        const data = await fetchDashboardData();
+        const scans = data.scans || [];
+        const credits = data.credits || 0;
 
         setAllScans(scans);
-        setUsageData(buildUsage(scans));
+        setUserCredits(credits);
 
+        // Format recent scans
         const formatted = scans.slice(0, 3).map((scan: ApiScan) => {
-          const status = scan.status ?? "UNKNOWN"; // default value
+          const status = scan.status ?? "UNKNOWN";
+          const confidence = scan.confidenceScore ?? 0;
           return {
-            name: scan.fileName,
+            name: scan.fileName || "Unknown",
             status: status.charAt(0) + status.slice(1).toLowerCase(),
-            color:
-              status === "AUTHENTIC"
-                ? "bg-green-600/70 dark:bg-green-500/70"
-                : status === "SUSPICIOUS"
-                  ? "bg-yellow-600/70 dark:bg-yellow-500/70"
-                  : "bg-red-600/70 dark:bg-red-500/70",
-            confidence: `${scan.confidenceScore}%`,
+            color: status === "AUTHENTIC"
+              ? "bg-green-600/70 dark:bg-green-500/70"
+              : status === "SUSPICIOUS"
+                ? "bg-yellow-600/70 dark:bg-yellow-500/70"
+                : "bg-red-600/70 dark:bg-red-500/70",
+            confidence: `${confidence}%`,
             time: new Date(scan.createdAt).toLocaleDateString(),
           };
         });
 
         setRecentScans(formatted);
-        setUserCredits(credits);
+        setUsageData(buildUsage(scans));
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
       } finally {
@@ -189,12 +180,95 @@ export default function Dashboard() {
     };
 
     loadData();
-  }, [isSignedIn, buildUsage]);
+  }, [isSignedIn]); // Removed buildUsage dependency
 
-  // Rebuild chart locally when filter changes
+  // Update usage data when filter changes
   useEffect(() => {
-    setUsageData(buildUsage(allScans));
+    if (allScans.length > 0) {
+      setUsageData(buildUsage(allScans));
+    }
   }, [filter, allScans, buildUsage]);
+
+  // Memoized chart components
+  const chartContent = useMemo(() => (
+    <ResponsiveContainer width="100%" height={250}>
+      <BarChart data={usageData}>
+        <XAxis
+          dataKey="day"
+          stroke="#94a3b8"
+          tickFormatter={(tick, index) => {
+            if (filter === "30") return index % 7 === 0 ? tick : "";
+            if (filter === "month") {
+              const interval = usageData.length > 15 ? 7 : 5;
+              return index % interval === 0 ? tick : "";
+            }
+            if (filter === "all") return index % 3 === 0 ? tick : "";
+            return tick;
+          }}
+          interval={0}
+        />
+        <YAxis stroke="#94a3b8" />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: "#000",
+            border: "1px solid #374151",
+            borderRadius: "0.5rem",
+            color: "#fff",
+          }}
+        />
+        <Bar dataKey="Authentic" stackId="a" fill="var(--color-authentic)" />
+        <Bar dataKey="Suspicious" stackId="a" fill="var(--color-suspicious)" />
+        <Bar dataKey="Deepfake" stackId="a" fill="var(--color-deepfake)" />
+      </BarChart>
+    </ResponsiveContainer>
+  ), [usageData, filter]);
+
+  const filterButtons = useMemo(() => 
+    filterOptions.map((opt) => (
+      <Button
+        key={opt.key}
+        size="sm"
+        variant={filter === opt.key ? "default" : "outline"}
+        className="text-xs px-3 py-1"
+        onClick={() => setFilter(opt.key)}
+      >
+        {opt.label}
+      </Button>
+    )), [filter]
+  );
+
+  const recentScansContent = useMemo(() => {
+    if (loading) {
+      return <p className="text-center text-gray-500 dark:text-gray-400 text-sm">Loading...</p>;
+    }
+    
+    if (recentScans.length === 0) {
+      return <p className="text-center text-gray-500 dark:text-gray-400 text-sm">No scans yet</p>;
+    }
+
+    return (
+      <>
+        {recentScans.map((scan, idx) => (
+          <div
+            key={idx}
+            className="flex items-center justify-between rounded-md bg-gray-50 dark:bg-gray-900 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate text-black dark:text-white">{scan.name}</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">{scan.time}</p>
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <span className={`text-xs px-2 py-1 rounded-full text-white whitespace-nowrap ${scan.color}`}>
+                {scan.status} ({scan.confidence})
+              </span>
+              <Eye className="h-4 w-4 text-gray-600 dark:text-gray-400 cursor-pointer" />
+            </div>
+          </div>
+        ))}
+        <Button variant="outline" className="w-full">View All Scans</Button>
+      </>
+    );
+  }, [recentScans, loading]);
 
   return (
     <div className="min-h-screen bg-white dark:bg-black px-6 py-8">
@@ -253,30 +327,7 @@ export default function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {loading ? (
-                <p className="text-center text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
-              ) : recentScans.length > 0 ? (
-                recentScans.map((scan, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-md bg-gray-50 dark:bg-black px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate text-black dark:text-white">{scan.name}</p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">{scan.time}</p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className={`text-xs px-2 py-1 rounded-full text-white whitespace-nowrap ${scan.color}`}>
-                        {scan.status} ({scan.confidence})
-                      </span>
-                      <Eye className="h-4 w-4 text-gray-600 dark:text-gray-400 cursor-pointer" />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-center text-gray-500 dark:text-gray-400 text-sm">No scans yet</p>
-              )}
-              <Button variant="outline" className="w-full">View All Scans</Button>
+              {recentScansContent}
             </CardContent>
           </Card>
 
@@ -285,69 +336,17 @@ export default function Dashboard() {
             <CardHeader className="space-y-3">
               <CardTitle className="flex items-center gap-2 text-black dark:text-white text-lg sm:text-xl">
                 <TrendingUp className="h-5 w-5 text-rose-500" />
-                {titleMap[filter] ?? "Usage"}
+                {titleMap[filter]}
               </CardTitle>
 
               <div className="flex flex-wrap gap-2">
-                {([
-                  { key: "7" as FilterType, label: "Past 7 days" },
-                  { key: "30" as FilterType, label: "Past 30 days" },
-                  { key: "month" as FilterType, label: "This month" },
-                  { key: "all" as FilterType, label: "All time" },
-                ] as { key: FilterType; label: string }[]).map((opt) => (
-                  <Button
-                    key={opt.key}
-                    size="sm"
-                    variant={filter === opt.key ? "default" : "outline"}
-                    className="text-xs px-3 py-1"
-                    onClick={() => setFilter(opt.key)}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
+                {filterButtons}
               </div>
             </CardHeader>
 
             <CardContent className="p-3 sm:p-6">
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={usageData}>
-                  <XAxis
-                    dataKey="day"
-                    stroke="#94a3b8"
-                    tickFormatter={(tick, index) => {
-                      if (filter === "30") {
-                        // show every 3rd day label
-                        return index % 7 === 0 ? tick : "";
-                      }
-                      if (filter === "month") {
-                        // show every 2nd or 3rd day depending on month length
-                        const interval = usageData.length > 15 ? 7 : 5;
-                        return index % interval === 0 ? tick : "";
-                      }
-                      if (filter === "all") {
-                        // show every 3rd day label
-                        return index % 3 === 0 ? tick : "";
-                      }
-
-                      return tick; // weekly or all-time
-                    }}
-                    interval={0} // force all ticks to render (we hide some with tickFormatter)
-                  />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#000",
-                      border: "1px solid #374151",
-                      borderRadius: "0.5rem",
-                      color: "#fff",
-                    }}
-                  />
-                  <Bar dataKey="Authentic" stackId="a" fill="var(--color-authentic)" />
-                  <Bar dataKey="Suspicious" stackId="a" fill="var(--color-suspicious)" />
-                  <Bar dataKey="Deepfake" stackId="a" fill="var(--color-deepfake)" />
-                </BarChart>
-              </ResponsiveContainer>
-
+              {chartContent}
+              
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 mt-4 text-sm text-black dark:text-white">
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded-sm" style={{ background: "var(--color-authentic)" }}></span>

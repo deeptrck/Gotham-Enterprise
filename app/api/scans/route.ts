@@ -13,25 +13,65 @@ interface IncomingFile {
   fileName: string;
 }
 
+// Cache for user scans
+const scansCache = new Map<string, { data: any; timestamp: number }>();
+const SCANS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
 // GET: fetch all scans for the signed-in user
 export async function GET() {
+  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  console.time(`scans:${reqId}:total`);
+
   try {
+    console.time(`scans:${reqId}:auth`);
     const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    console.timeEnd(`scans:${reqId}:auth`);
 
+    if (!userId) {
+      console.timeEnd(`scans:${reqId}:total`);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check cache first
+    const cacheKey = `scans:${userId}`;
+    const cached = scansCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < SCANS_CACHE_TTL) {
+      console.timeEnd(`scans:${reqId}:total`);
+      return NextResponse.json(cached.data, { status: 200 });
+    }
+
+    console.time(`scans:${reqId}:connect`);
     await connectToDatabase();
+    console.timeEnd(`scans:${reqId}:connect`);
 
-    const scans = await VerificationResult.find({ userId }).sort({ createdAt: -1 });
+    // Use compound index for optimal performance
+    console.time(`scans:${reqId}:find-scans`);
+    const scans = await VerificationResult.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
+      .lean()
+      .maxTimeMS(10000); // 10 second timeout
+    
+    console.timeEnd(`scans:${reqId}:find-scans`);
 
+    // Cache the results
+    scansCache.set(cacheKey, { data: scans, timestamp: Date.now() });
+
+    console.timeEnd(`scans:${reqId}:total`);
     return NextResponse.json(scans, { status: 200 });
   } catch (error) {
-    console.error("Error fetching scans:", error);
+    console.error(`Error fetching scans [${reqId}]:`, error);
+    try { console.timeEnd(`scans:${reqId}:total`); } catch (e) {}
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-// POST: create new scan(s)
+// POST: create new scan(s) - optimized batch processing
 export async function POST(req: NextRequest) {
+  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  console.time(`scan-create:${reqId}:total`);
+
   try {
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -39,13 +79,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     await connectToDatabase();
 
+    console.time(`scan-create:${reqId}:find-user`);
     const user = await User.findOne({ clerkId: userId });
+    console.timeEnd(`scan-create:${reqId}:find-user`);
+    
     if (!user || user.credits <= 0) {
       return NextResponse.json(
         { error: "Insufficient credits" },
         { status: 402 }
       );
     }
+
+    // Clear scans cache for this user
+    scansCache.delete(`scans:${userId}`);
 
     // Handle bulk verification
     if (Array.isArray(body.files) && body.files.length > 0) {
@@ -58,10 +104,14 @@ export async function POST(req: NextRequest) {
         fileName: f.fileName,
       }));
 
+      console.time(`scan-create:${reqId}:bulk-verify`);
       const bulkResults = await verifyMediaBulk(bulkItems, 3);
+      console.timeEnd(`scan-create:${reqId}:bulk-verify`);
 
       const savedResults = [];
+      let creditCost = 0;
 
+      console.time(`scan-create:${reqId}:save-results`);
       for (const { media, result } of bulkResults) {
         if (!result) continue;
 
@@ -79,7 +129,7 @@ export async function POST(req: NextRequest) {
 
         const vr = new VerificationResult({
           userId,
-          scanId: media.fileName || `scan-${Date.now()}`,
+          scanId: media.fileName || `scan-${Date.now()}-${Math.random()}`,
           fileName: media.fileName || "unknown",
           fileType: media.fileType || "image",
           status: mappedStatus,
@@ -96,11 +146,15 @@ export async function POST(req: NextRequest) {
 
         await vr.save();
         savedResults.push(vr);
-        user.credits -= 1;
+        creditCost += 1;
       }
+      console.timeEnd(`scan-create:${reqId}:save-results`);
 
+      // Update user credits in one operation
+      user.credits -= creditCost;
       await user.save();
 
+      console.timeEnd(`scan-create:${reqId}:total`);
       return NextResponse.json(savedResults, { status: 201 });
     }
 
@@ -110,6 +164,7 @@ export async function POST(req: NextRequest) {
 
     if (!mediaUrl && !base64) throw new Error("No media provided");
 
+    console.time(`scan-create:${reqId}:single-verify`);
     let rdResult = null;
     if (base64) {
       const buffer = Buffer.from(base64.replace(/^data:.+;base64,/, ""), "base64");
@@ -117,12 +172,13 @@ export async function POST(req: NextRequest) {
     } else if (mediaUrl) {
       rdResult = await verifyMedia({ url: mediaUrl, fileType: body.fileType });
     }
+    console.timeEnd(`scan-create:${reqId}:single-verify`);
     
     if (!rdResult) {
-    return NextResponse.json(
-      { error: "Failed to retrieve Reality Defender results" },
-      { status: 500 }
-    );
+      return NextResponse.json(
+        { error: "Failed to retrieve Reality Defender results" },
+        { status: 500 }
+      );
     }
 
     const overallScore = typeof rdResult.score === "number" ? rdResult.score : 0;
@@ -133,6 +189,7 @@ export async function POST(req: NextRequest) {
 
     const modelsUsed = Array.isArray(rdResult.models) ? rdResult.models.map((m) => m.name) : [];
 
+    console.time(`scan-create:${reqId}:save-single`);
     const result = new VerificationResult({
       userId,
       scanId: body.scanId || `scan-${Date.now()}`,
@@ -150,7 +207,9 @@ export async function POST(req: NextRequest) {
     await result.save();
     user.credits -= 1;
     await user.save();
+    console.timeEnd(`scan-create:${reqId}:save-single`);
 
+    console.timeEnd(`scan-create:${reqId}:total`);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error("Error creating scan:", error);
