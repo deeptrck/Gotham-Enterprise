@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import autoTable,{ UserOptions } from "jspdf-autotable";
 
 // Lightweight DTO for PDF generation — keep this decoupled from Mongoose models
 export interface PdfResultDto {
@@ -121,9 +121,10 @@ async function toDataUrl(url: string): Promise<string | null> {
       fr.onerror = reject;
       fr.readAsDataURL(blob);
     });
-  } catch (e) {
-    return null;
-  }
+} catch (e) {
+  console.warn("toDataUrl failed:", e);
+  return null;
+}
 }
 
 export const handleDownloadPDF = async (dto: PdfResultDto) => {
@@ -253,31 +254,33 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
       }
     );
 
-    (autoTable as any)(doc, {
-      startY: y + 8,
-      head: [["#", "Model", "Status", "Confidence", "Description"]],
-      body: tableData,
-      styles: {
-        font: "helvetica",
-        fontSize: 9,
-        cellPadding: 4,
-        valign: "middle",
-      },
-      headStyles: {
-        fillColor: [32, 132, 230],
-        textColor: [255, 255, 255],
-        halign: "center",
-      },
-      bodyStyles: {
-        halign: "center",
-        textColor: [30, 30, 30],
-      },
-      columnStyles: {
-        1: { halign: "left", cellWidth: 35 },
-        4: { halign: "left", cellWidth: 75 },
-      },
-      theme: "grid",
-    });
+const tableOptions: UserOptions = {
+  startY: y + 8,
+  head: [["#", "Model", "Status", "Confidence", "Description"]],
+  body: tableData,
+  styles: {
+    font: "helvetica",
+    fontSize: 9,
+    cellPadding: 4,
+    valign: "middle",
+  },
+  headStyles: {
+    fillColor: [32, 132, 230],
+    textColor: [255, 255, 255],
+    halign: "center",
+  },
+  bodyStyles: {
+    halign: "center",
+    textColor: [30, 30, 30],
+  },
+  columnStyles: {
+    1: { halign: "left", cellWidth: 35 },
+    4: { halign: "left", cellWidth: 75 },
+  },
+  theme: "grid",
+};
+
+autoTable(doc, tableOptions);
   } else {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
