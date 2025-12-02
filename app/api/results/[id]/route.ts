@@ -3,8 +3,21 @@ import { VerificationResult } from "@/lib/models/VerificationResult";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
-// Cache for frequently accessed results (in-memory, simple approach)
-const resultCache = new Map<string, { data: any; timestamp: number }>();
+export interface VerificationResultType {
+  fileName?: string;
+  scanId: string;
+  status?: string;
+  confidenceScore?: number;
+  createdAt: string | Date;
+  fileType?: string;
+  imageUrl?: string;
+  description?: string;
+  modelsUsed?: string[];
+  features?: string[];
+}
+
+// Cache for frequently accessed results
+const resultCache = new Map<string, { data: VerificationResultType; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // GET: Fetch specific result by scanId
@@ -14,7 +27,7 @@ export async function GET(
 ) {
   const { id } = await context.params;
   const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  
+
   console.time(`result:${reqId}:total`);
 
   try {
@@ -30,7 +43,8 @@ export async function GET(
     // Check cache first
     const cacheKey = `${userId}:${id}`;
     const cached = resultCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       console.timeEnd(`result:${reqId}:total`);
       return NextResponse.json(cached.data, { status: 200 });
     }
@@ -39,13 +53,18 @@ export async function GET(
     await connectToDatabase();
     console.timeEnd(`result:${reqId}:connect`);
 
-    // Select only necessary fields to reduce data transfer
+    // Select relevant fields only
     console.time(`result:${reqId}:find`);
-    const result = await VerificationResult.findOne({ scanId: id, userId })
-      .select("fileName scanId status confidenceScore createdAt fileType imageUrl description modelsUsed features")
-      .lean()
-      .maxTimeMS(10000); // 10 second timeout
-    
+    const result = await VerificationResult.findOne({
+      scanId: id,
+      userId,
+    })
+      .select(
+        "fileName scanId status confidenceScore createdAt fileType imageUrl description modelsUsed features"
+      )
+      .lean<VerificationResultType>() // <-- Fully typed lean()
+      .maxTimeMS(10000);
+
     console.timeEnd(`result:${reqId}:find`);
 
     if (!result) {
@@ -54,14 +73,24 @@ export async function GET(
     }
 
     // Cache the result
-    resultCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    resultCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now(),
+    });
 
     console.timeEnd(`result:${reqId}:total`);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     console.error(`Error fetching result [${reqId}]:`, err);
-    try { console.timeEnd(`result:${reqId}:total`); } catch (e) {}
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+
+    try {
+      console.timeEnd(`result:${reqId}:total`);
+    } catch {}
+
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -74,13 +103,17 @@ export async function DELETE(
 
   try {
     const { userId } = await auth();
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
 
-    const result = await VerificationResult.findOneAndDelete({ scanId: id, userId });
+    const result = await VerificationResult.findOneAndDelete({
+      scanId: id,
+      userId,
+    });
 
     if (!result) {
       return NextResponse.json({ error: "Result not found" }, { status: 404 });
@@ -90,9 +123,15 @@ export async function DELETE(
     const cacheKey = `${userId}:${id}`;
     resultCache.delete(cacheKey);
 
-    return NextResponse.json({ message: "Result deleted successfully" }, { status: 200 });
+    return NextResponse.json(
+      { message: "Result deleted successfully" },
+      { status: 200 }
+    );
   } catch (err) {
     console.error("Error deleting result:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }

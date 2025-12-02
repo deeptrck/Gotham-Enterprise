@@ -13,8 +13,25 @@ interface IncomingFile {
   fileName: string;
 }
 
+interface VerificationResultDoc {
+  _id: string;
+  scanId: string;
+  fileName: string;
+  status: "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE";
+  confidenceScore: number;
+  createdAt: string;
+  fileType: string;
+  imageUrl?: string;
+  modelsUsed?: string[];
+}
+
+interface CachedScan {
+  data: VerificationResultDoc[];
+  timestamp: number;
+}
+
 // Cache for user scans
-const scansCache = new Map<string, { data: any; timestamp: number }>();
+const scansCache = new Map<string, CachedScan>();
 const SCANS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
 // GET: fetch all scans for the signed-in user
@@ -50,7 +67,7 @@ export async function GET() {
       .sort({ createdAt: -1 })
       .limit(100)
       .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-      .lean()
+      .lean<VerificationResultDoc[]>() 
       .maxTimeMS(10000); // 10 second timeout
     
     console.timeEnd(`scans:${reqId}:find-scans`);
