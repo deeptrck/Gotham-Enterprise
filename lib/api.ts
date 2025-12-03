@@ -99,6 +99,20 @@ export async function fetchResult(scanId: string) {
   }
 }
 
+export async function fetchAllResults(page: number = 1, limit: number = 20) {
+  try {
+    const response = await fetch(`/api/results?page=${page}&limit=${limit}`, { method: "GET", credentials: "include" });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      throw new Error(errBody?.error || "Failed to fetch results");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching all results:", error);
+    throw error;
+  }
+}
+
 export async function deleteResult(scanId: string) {
   try {
     const response = await fetch(`/api/results/${scanId}`, { method: "DELETE", credentials: "include" });

@@ -2,161 +2,223 @@
 
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
-import { useParams } from "next/navigation";
-import { Check } from "lucide-react";
-import { fetchResult } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { fetchAllResults } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 
-interface ResultData {
+interface ScanResult {
+  _id: string;
   fileName: string;
   scanId: string;
   status: string;
   confidenceScore: number;
   createdAt: string;
   fileType: string;
-  modelsUsed: string[];
-  imageUrl: string;
-  description: string;
-  features: string[];
+  imageUrl?: string;
+  description?: string;
+  modelsUsed?: string[];
+  features?: string[];
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
 export default function ResultsPage() {
-  const { id } = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { isSignedIn } = useUser();
-  const [resultData, setResultData] = useState<ResultData | null>(null);
+
+  const [results, setResults] = useState<ScanResult[]>([]);
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isSignedIn || !id) return;
+  const currentPage = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
 
-    const loadResult = async () => {
+  useEffect(() => {
+    if (!isSignedIn) return;
+
+    const loadResults = async () => {
       try {
         setLoading(true);
-        const data = await fetchResult(id as string);
-        setResultData({
-          fileName: data.fileName,
-          scanId: data.scanId,
-          status: data.status,
-          confidenceScore: data.confidenceScore,
-          createdAt: data.createdAt,
-          fileType: data.fileType,
-          modelsUsed: data.modelsUsed || [],
-          imageUrl: data.imageUrl || "https://via.placeholder.com/280x180.png?text=Detected+Image",
-          description: data.description || "deeptrack is an advanced deepfake detection solution designed for media outlets, financial institutions, and government agencies",
-          features: data.features || [
-            "Advanced AI models trained on millions of authentic and manipulated images",
-            "Ensemble approach using multiple specialized detection algorithms",
-            "Real-time detection of deepfakes, AI-generated content, and manipulations",
-          ],
-        });
+        setError(null);
+        const data = await fetchAllResults(currentPage, 20);
+        setResults(data.data || []);
+        setPagination(data.pagination);
       } catch (err) {
-        console.error("Failed to load result:", err);
-        setError("Failed to load result details");
+        console.error("Failed to load results:", err);
+        setError(err instanceof Error ? err.message : "Failed to load results");
       } finally {
         setLoading(false);
       }
     };
 
-    loadResult();
-  }, [isSignedIn, id]);
+    loadResults();
+  }, [isSignedIn, currentPage]);
+
+  const handlePrevious = () => {
+    if (pagination?.hasPrevPage) {
+      router.push(`/results?page=${currentPage - 1}`);
+    }
+  };
+
+  const handleNext = () => {
+    if (pagination?.hasNextPage) {
+      router.push(`/results?page=${currentPage + 1}`);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "AUTHENTIC":
+        return "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400";
+      case "SUSPICIOUS":
+        return "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400";
+      case "DEEPFAKE":
+        return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400";
+      default:
+        return "bg-gray-100 dark:bg-gray-900/40 text-gray-700 dark:text-gray-400";
+    }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-white dark:bg-black text-black dark:text-white items-center justify-center">
-        <p>Loading result...</p>
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black text-black dark:text-white">
+        <p className="text-lg">Loading results...</p>
       </div>
     );
   }
 
-  if (error || !resultData) {
+  if (error) {
     return (
-      <div className="min-h-screen flex flex-col bg-white dark:bg-black text-black dark:text-white items-center justify-center">
-        <p className="text-red-500">{error || "Result not found"}</p>
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black text-black dark:text-white">
+        <p className="text-red-500">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-black text-black dark:text-white">
-      <main className="flex-grow max-w-6xl mx-auto w-full px-6 py-8">
-        <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
-          <span className="text-4xl">📊</span>
-          Results
-        </h1>
-
-        <div className="bg-white dark:bg-black rounded-xl shadow-lg p-8 flex flex-col md:flex-row gap-10 border border-gray-200 dark:border-gray-800">
-          {/* Image */}
-          <div className="flex-shrink-0 w-full md:w-[280px]">
-            <div className="w-full h-[260px] rounded-lg overflow-hidden shadow-md border border-gray-200 dark:border-gray-800 flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-              <Image
-                src={resultData.imageUrl}
-                alt={resultData.fileName}
-                width={280}
-                height={260}
-                className="object-cover rounded-lg"
-              />
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
-              uploaded media {resultData.fileName}.jpg
-            </p>
-          </div>
-
-          {/* Details */}
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold mb-6">{resultData.fileName}</h2>
-
-            <div className="grid grid-cols-2 gap-y-3 text-sm mb-6">
-              <div className="col-span-2 flex items-center gap-2 mb-2">
-                <span className="font-semibold">Overall Result:</span>
-                <span
-                  className={`font-semibold px-3 py-1 rounded-md ${
-                    resultData.status === "AUTHENTIC"
-                      ? "text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40"
-                      : resultData.status === "SUSPICIOUS"
-                      ? "text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/40"
-                      : "text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40"
-                  }`}
-                >
-                  {resultData.status}
-                </span>
-              </div>
-              <p>
-                <span className="font-semibold">Confidence Score: </span>
-                {resultData.confidenceScore}%
-              </p>
-              <p>
-                <span className="font-semibold">Scan ID: </span>
-                {resultData.scanId}
-              </p>
-              <p>
-                <span className="font-semibold">Uploaded Date: </span>
-                {new Date(resultData.createdAt).toLocaleDateString()}
-              </p>
-              <p>
-                <span className="font-semibold">Models Used: </span>
-                {resultData.modelsUsed.length} AI Models
-              </p>
-              <p>
-                <span className="font-semibold">Type: </span>
-                {resultData.fileType}
-              </p>
-            </div>
-
-            <p className="text-gray-700 dark:text-gray-400 text-sm leading-relaxed mb-6">
-              {resultData.description}
-            </p>
-
-            <ul className="space-y-3 text-sm text-gray-700 dark:text-gray-400">
-              {resultData.features.map((feature, idx) => (
-                <li key={idx} className="flex items-center gap-3">
-                  <Check className="text-blue-600 dark:text-blue-400 w-4 h-4 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-          </div>
+    <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
+            
+            Scan Results
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Total scans: <span className="font-semibold">{pagination?.total || 0}</span>
+          </p>
         </div>
+
+        {results.length === 0 ? (
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-12 text-center border border-gray-200 dark:border-gray-800">
+            <p className="text-gray-600 dark:text-gray-400 mb-4">No scan results yet.</p>
+            <button
+              onClick={() => router.push("/")}
+              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg transition-colors"
+            >
+              Start Scanning
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Results Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              {results.map((result) => (
+                <div
+                  key={result._id}
+                  onClick={() => router.push(`/results/${result.scanId}`)}
+                  className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden hover:shadow-lg dark:hover:shadow-lg dark:hover:shadow-blue-500/20 hover:shadow-blue-300/20 cursor-pointer transition-all hover:border-blue-400 dark:hover:border-blue-600"
+                >
+                  {/* Image Container */}
+                  <div className="relative w-full h-48 bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+                    {result.imageUrl ? (
+                      <Image
+                        src={result.imageUrl}
+                        alt={result.fileName}
+                        fill
+                        className="object-cover hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = "https://via.placeholder.com/300x200?text=Image";
+                        }}
+                      />
+                    ) : (
+                      <span className="text-gray-400">No image</span>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-4">
+                    <h3 className="text-lg font-semibold truncate mb-2">{result.fileName}</h3>
+
+                    <div className="flex items-center justify-between mb-3">
+                      <span className={`text-xs font-medium px-3 py-1 rounded-full ${getStatusColor(result.status)}`}>
+                        {result.status}
+                      </span>
+                      <span className="text-blue-600 dark:text-blue-400 font-bold">
+                        {Math.round(result.confidenceScore)}%
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                      <p>
+                        <span className="font-semibold">Type:</span> {result.fileType}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Date:</span> {new Date(result.createdAt).toLocaleDateString()}
+                      </p>
+                      <p className="truncate">
+                        <span className="font-semibold">ID:</span> {result.scanId.substring(0, 20)}...
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {pagination && pagination.pages > 1 && (
+              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+                <button
+                  onClick={handlePrevious}
+                  disabled={!pagination.hasPrevPage}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </button>
+
+                <div className="text-center">
+                  <p className="text-sm font-semibold">
+                    Page <span className="text-blue-600 dark:text-blue-400">{pagination.page}</span> of{" "}
+                    <span className="text-blue-600 dark:text-blue-400">{pagination.pages}</span>
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+                    {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleNext}
+                  disabled={!pagination.hasNextPage}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors disabled:cursor-not-allowed"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </main>
     </div>
   );
