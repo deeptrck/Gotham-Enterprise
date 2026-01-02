@@ -1,15 +1,7 @@
 import mongoose from "mongoose";
 
-// Ensure MONGODB_URI is defined at runtime
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) {
-  throw new Error(
-    "Please define the MONGODB_URI environment variable inside .env.local"
-  );
-}
-
-// Type assertion to tell TypeScript this is definitely a string
-const MONGODB_URI_STRING: string = MONGODB_URI;
+// Do NOT throw on import — read environment variables at runtime inside connectToDatabase.
+// This prevents build-time failures when Next.js inspects modules (e.g., during page data collection).
 
 interface CachedMongoose {
   conn: typeof mongoose | null;
@@ -34,13 +26,21 @@ const cached: CachedMongoose = globalWithMongoose.mongoose ?? {
 globalWithMongoose.mongoose = cached;
 
 export async function connectToDatabase(): Promise<typeof mongoose> {
+  // Ensure MONGODB_URI is defined at runtime
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) {
+    throw new Error(
+      "Please define the MONGODB_URI environment variable inside .env.local"
+    );
+  }
+
   // Return existing connection if available
   if (cached.conn) return cached.conn;
 
   // Otherwise, create a new promise to connect
   if (!cached.promise) {
     const opts = { bufferCommands: false };
-    cached.promise = mongoose.connect(MONGODB_URI_STRING, opts);
+    cached.promise = mongoose.connect(MONGODB_URI, opts);
   }
 
   try {
