@@ -51,8 +51,8 @@ export default function PricingBillingPage() {
     {
       id: "starter",
       name: "Starter",
-      priceMonthly: "$2",
-      usdAmountMonthly: 2,
+      priceMonthly: "$99",
+      usdAmountMonthly: 99,
       priceYearly: "$950",
       usdAmountYearly: 950,
       savingsYearly: "Save $238",
