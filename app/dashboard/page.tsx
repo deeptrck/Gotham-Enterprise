@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Eye, FileText, TrendingUp, Wallet } from "lucide-react";
 import { fetchDashboardData } from "@/lib/api";
+import * as Sentry from "@sentry/nextjs";
 
 const EMPTY_WEEK = [
   { day: "Mon", Authentic: 0, Suspicious: 0, Deepfake: 0 },
@@ -174,6 +175,7 @@ export default function Dashboard() {
         setUsageData(buildUsage(scans));
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
+        Sentry.captureException(error);
       } finally {
         setLoading(false);
       }

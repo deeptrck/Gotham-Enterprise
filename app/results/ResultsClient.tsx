@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchAllResults } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
+import * as Sentry from "@sentry/nextjs";
 
 interface ScanResult {
   _id: string;
@@ -54,6 +55,7 @@ export default function ResultsClient() {
         setPagination(data.pagination);
       } catch (err) {
         console.error("Failed to load results:", err);
+        Sentry.captureException(err);
         setError(err instanceof Error ? err.message : "Failed to load results");
       } finally {
         setLoading(false);

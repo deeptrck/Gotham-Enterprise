@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Check, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { fetchResult } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
+import * as Sentry from "@sentry/nextjs";
 
 // --- Model map (same as single results page) ---
 const modelMap: Record<string, { label: string; description: string }> = {
@@ -173,6 +174,7 @@ export default function BulkResultsClient() {
                 }));
               }
             } catch (err) {
+              Sentry.captureException(err);
               console.warn("Failed to parse RD result:", err);
             }
 
@@ -197,6 +199,7 @@ export default function BulkResultsClient() {
               rdModels,
             });
           } catch (err) {
+            Sentry.captureException(err);
             console.error(`Failed to fetch result ${id}`, err);
           }
         }
@@ -204,6 +207,7 @@ export default function BulkResultsClient() {
         setResults(fetchedResults);
       } catch (err) {
         console.error("Failed to load bulk results:", err);
+        Sentry.captureException(err);
         setError("Failed to load bulk results.");
       } finally {
         setLoading(false);

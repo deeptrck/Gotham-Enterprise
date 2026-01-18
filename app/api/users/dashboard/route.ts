@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
+import * as Sentry from "@sentry/nextjs";
 
 // Cache for dashboard data (in-memory; ephemeral on serverless)
 const dashboardCache = new Map<string, { data: DashboardResponse; timestamp: number }>();
@@ -102,6 +103,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(responseData, { status: 200 });
   } catch (error) {
     console.error(`Error fetching dashboard data [${reqId}]:`, error);
+    Sentry.captureException(error);
     try {
       console.timeEnd(`dashboard:${reqId}:total`);
     } catch {}

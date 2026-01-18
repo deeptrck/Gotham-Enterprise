@@ -5,6 +5,7 @@ import verifyMedia, { RDModelResult } from "@/lib/realityDefender";
 import { verifyMediaBulk, BulkMedia } from "@/lib/verifyMediaBulk";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import * as Sentry from "@sentry/nextjs";
 
 interface IncomingFile {
   base64?: string;
@@ -79,6 +80,7 @@ export async function GET() {
     return NextResponse.json(scans, { status: 200 });
   } catch (error) {
     console.error(`Error fetching scans [${reqId}]:`, error);
+    Sentry.captureException(error);
     try { console.timeEnd(`scans:${reqId}:total`); } catch (e) {}
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -230,6 +232,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error("Error creating scan:", error);
+    Sentry.captureException(error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

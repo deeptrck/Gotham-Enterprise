@@ -7,6 +7,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fetchScans, fetchResult } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
+import * as Sentry from "@sentry/nextjs";
 
 type ScanRecord = {
   _id: string;
@@ -56,6 +57,7 @@ export default function HistoryPage() {
         setScans(formattedScans);
       } catch (error) {
         console.error("Failed to load scans:", error);
+        Sentry.captureException(error);
         setScans([]);
       } finally {
         setLoading(false);
@@ -85,6 +87,7 @@ export default function HistoryPage() {
       handleDownloadPDF(pdfDto);
     } catch (err) {
       console.error("Failed to download PDF:", err);
+      Sentry.captureException(err);
     }
   };
 

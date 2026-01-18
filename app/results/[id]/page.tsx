@@ -7,6 +7,7 @@ import { fetchResult } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { FileDown } from "lucide-react";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
+import * as Sentry from "@sentry/nextjs";
 
 type RdModel = {
   name: string;
@@ -92,6 +93,7 @@ useEffect(() => {
       });
     } catch {
       setError("Failed to load result");
+      Sentry.captureException(error);
     } finally {
       setLoading(false);
     }

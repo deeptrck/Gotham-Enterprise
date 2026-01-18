@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { Payment } from "@/lib/models/Payment";
+import * as Sentry from "@sentry/nextjs";
 
 const PAYSTACK_VERIFY_URL = "https://api.paystack.co/transaction/verify";
 
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, credits: user.credits });
   } catch (error) {
     console.error("Error verifying paystack transaction:", error);
+    Sentry.captureException(error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

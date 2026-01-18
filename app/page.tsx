@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { createScan } from "@/lib/api";
 import { CheckCircle, XCircle, Clock } from "lucide-react";
+import * as Sentry from "@sentry/nextjs";
 
 
 type UploadProgress = {
@@ -119,6 +120,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       updateProgress(file.name, 100, "done");
     } catch (err: unknown) {
       console.error("Upload error for", file.name, err);
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : String(err);
       updateProgress(file.name, 0, "error", message);
       setError(message);
@@ -184,6 +186,7 @@ const handleUrlSubmit = async () => {
     router.push(`/results/${result.scanId}`);
   } catch (err: unknown) {
     console.error("URL scan error:", err);
+    Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     setError(message || "Failed to scan URL");
   } finally {

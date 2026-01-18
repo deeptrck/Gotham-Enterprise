@@ -5,6 +5,7 @@ import { Check, Zap } from "lucide-react";
 import { createPaystackTransaction, subscribeToTrial } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import * as Sentry from "@sentry/nextjs";
 
 export default function PricingBillingPage() {
   const router = useRouter();
@@ -126,6 +127,7 @@ export default function PricingBillingPage() {
       }
     } catch (err) {
       console.error(err);
+      Sentry.captureException(err);
       showToast("Error initializing payment. See console for details.");
     } finally {
       setLoadingRef(null);
@@ -167,6 +169,7 @@ export default function PricingBillingPage() {
       }
     } catch (err) {
       console.error(err);
+      Sentry.captureException(err);
       showToast("Error initializing plan purchase. See console.");
     } finally {
       setLoadingRef(null);
@@ -192,6 +195,7 @@ export default function PricingBillingPage() {
       }
     } catch (err) {
       console.error('Error subscribing to trial', err);
+      Sentry.captureException(err);
       showToast('Error activating trial. See console for details.');
     } finally {
       setLoadingRef(null);

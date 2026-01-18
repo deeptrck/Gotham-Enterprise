@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
+import * as Sentry from "@sentry/nextjs";
 
 const PAYSTACK_INIT_URL = "https://api.paystack.co/transaction/initialize";
 
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error initializing paystack transaction:", error);
+    Sentry.captureException(error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

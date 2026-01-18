@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle, XCircle, Loader } from "lucide-react";
 import { verifyPaystackTransaction } from "@/lib/api";
+import * as Sentry from "@sentry/nextjs";
 
 export default function PaymentSuccessClient() {
   const searchParams = useSearchParams();
@@ -35,6 +36,7 @@ export default function PaymentSuccessClient() {
         }
       } catch (err: unknown) {
         setStatus("error");
+        Sentry.captureException(err);
         const message = err instanceof Error ? err.message : String(err);
         setErrorMessage(message || "Error verifying payment");
       }

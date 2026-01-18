@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import * as Sentry from "@sentry/nextjs";
 
 /**
  * GET /api/results - Fetch all scan results for the authenticated user with pagination
@@ -68,6 +69,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (error) {
     console.error(`Error fetching results [${reqId}]:`, error);
+    Sentry.captureException(error);
     try {
       console.timeEnd(`results:${reqId}:total`);
     } catch (e) {}

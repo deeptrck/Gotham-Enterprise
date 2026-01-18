@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
 import AnimatedText from "@/components/ui/animated-text";
+import * as Sentry from "@sentry/nextjs";
 
 export default function Login() {
   const router = useRouter();
@@ -43,6 +44,7 @@ export default function Login() {
       console.log("Login not complete:", result);
     } catch (e: unknown) {
       console.error(e);
+      Sentry.captureException(e);
       type ClerkErr = { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
       const errObj = e as ClerkErr;
       const message = errObj?.errors?.[0]?.longMessage || errObj?.errors?.[0]?.message || (e instanceof Error ? e.message : String(e)) || "Invalid login";
@@ -67,6 +69,7 @@ export default function Login() {
       });
     } catch (e: unknown) {
       console.error(e);
+      Sentry.captureException(e);
       type ClerkErr = { errors?: Array<{ longMessage?: string; message?: string }>; };
       const errObj = e as ClerkErr;
       const message = errObj?.errors?.[0]?.longMessage || errObj?.errors?.[0]?.message || "Google sign-in failed";

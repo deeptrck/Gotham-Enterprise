@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import * as Sentry from "@sentry/nextjs";
 
 export interface VerificationResultType {
   fileName?: string;
@@ -82,6 +83,7 @@ export async function GET(
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     console.error(`Error fetching result [${reqId}]:`, err);
+    Sentry.captureException(err);
 
     try {
       console.timeEnd(`result:${reqId}:total`);
@@ -129,6 +131,7 @@ export async function DELETE(
     );
   } catch (err) {
     console.error("Error deleting result:", err);
+    Sentry.captureException(err);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

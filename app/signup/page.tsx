@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSignUp, useSignIn } from "@clerk/nextjs";
 import AnimatedText from "@/components/ui/animated-text";
+import * as Sentry from "@sentry/nextjs";
 
 export default function Signup() {
   const router = useRouter();
@@ -48,6 +49,7 @@ async function handleSubmit(e: React.FormEvent) {
     setPendingVerification(true);
   } catch (e: unknown) {
     console.error(e);
+    Sentry.captureException(e);
     type ClerkErr = { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
     const errObj = e as ClerkErr;
     const message = errObj?.errors?.[0]?.longMessage || errObj?.errors?.[0]?.message || (e instanceof Error ? e.message : String(e)) || "Something went wrong";
@@ -76,6 +78,7 @@ async function handleSubmit(e: React.FormEvent) {
       console.log("Sign-up not complete:", completeSignUp);
     } catch (e: unknown) {
       console.error(e);
+      Sentry.captureException(e);
       type ClerkErr = { errors?: Array<{ longMessage?: string; message?: string }>; };
       const errObj = e as ClerkErr;
       const message = errObj?.errors?.[0]?.longMessage || errObj?.errors?.[0]?.message || "Invalid code";
@@ -100,6 +103,7 @@ async function handleSubmit(e: React.FormEvent) {
       });
     } catch (e: unknown) {
       console.error(e);
+      Sentry.captureException(e);
       type ClerkErr = { errors?: Array<{ longMessage?: string; message?: string }>; };
       const errObj = e as ClerkErr;
       const message = errObj?.errors?.[0]?.longMessage || errObj?.errors?.[0]?.message || "Google sign-up failed";
