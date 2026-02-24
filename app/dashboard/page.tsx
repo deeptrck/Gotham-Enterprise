@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Eye, FileText, TrendingUp, Wallet } from "lucide-react";
 import { fetchDashboardData } from "@/lib/api";
+import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
 
 const EMPTY_WEEK = [
@@ -241,7 +242,7 @@ export default function Dashboard() {
 
   const recentScansContent = useMemo(() => {
     if (loading) {
-      return <p className="text-center text-gray-500 dark:text-gray-400 text-sm">Loading...</p>;
+      return <LoadingSpinner size="sm" message="Loading scans..." />;
     }
     
     if (recentScans.length === 0) {
@@ -271,6 +272,10 @@ export default function Dashboard() {
       </>
     );
   }, [recentScans, loading]);
+
+  if (loading) {
+    return <LoadingSpinner fullScreen message="Loading dashboard data..." />;
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-black px-6 py-8">

@@ -7,7 +7,7 @@ import * as Sentry from "@sentry/nextjs";
 
 // Cache for dashboard data (in-memory; ephemeral on serverless)
 const dashboardCache = new Map<string, { data: DashboardResponse; timestamp: number }>();
-const DASHBOARD_CACHE_TTL = 10 * 1000; // 10 seconds
+const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
 
 // Type for a single scan summary returned to the frontend
 type ScanSummary = {
@@ -75,19 +75,25 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    // Fetch user and scans in parallel
+    // Fetch user and scans in parallel with optimized queries
     const [userResult, scansResult] = await Promise.allSettled([
-      User.findOne({ clerkId: userId }).select("credits").lean<UserDoc>(),
+      User.findOne({ clerkId: userId })
+        .select("credits")
+        .maxTimeMS(2000)
+        .lean({ virtuals: false, getters: false })
+        .exec() as unknown as Promise<UserDoc | null>,
       VerificationResult.find({ userId })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-        .lean<ScanSummary[]>(),
+        .maxTimeMS(5000)
+        .lean({ virtuals: false, getters: false })
+        .exec() as unknown as Promise<ScanSummary[]>,
     ]);
 
-    const user: UserDoc | null = userResult.status === "fulfilled" ? userResult.value : null;
-    const scans: ScanSummary[] = scansResult.status === "fulfilled" ? scansResult.value : [];
+    const user: UserDoc | null = userResult.status === "fulfilled" ? (userResult.value as UserDoc | null) : null;
+    const scans: ScanSummary[] = scansResult.status === "fulfilled" ? (scansResult.value as ScanSummary[]) : [];
 
     const responseData: DashboardResponse = {
       credits: user?.credits ?? 0,

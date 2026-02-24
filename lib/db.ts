@@ -39,7 +39,15 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
 
   // Otherwise, create a new promise to connect
   if (!cached.promise) {
-    const opts = { bufferCommands: false };
+    const opts = {
+      bufferCommands: false,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      family: 4, // Use IPv4, skip IPv6
+      connectTimeoutMS: 10000,
+    };
     cached.promise = mongoose.connect(MONGODB_URI, opts);
   }
 

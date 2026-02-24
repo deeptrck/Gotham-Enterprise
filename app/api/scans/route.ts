@@ -33,7 +33,7 @@ interface CachedScan {
 
 // Cache for user scans
 const scansCache = new Map<string, CachedScan>();
-const SCANS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const SCANS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // GET: fetch all scans for the signed-in user
 export async function GET() {
@@ -68,8 +68,9 @@ export async function GET() {
       .sort({ createdAt: -1 })
       .limit(100)
       .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-      .lean<VerificationResultDoc[]>() 
-      .maxTimeMS(10000); // 10 second timeout
+      .maxTimeMS(5000) // 5 second timeout
+      .lean({ virtuals: false, getters: false, versionKey: false })
+      .exec() as unknown as VerificationResultDoc[];
     
     console.timeEnd(`scans:${reqId}:find-scans`);
 

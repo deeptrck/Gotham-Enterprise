@@ -22,5 +22,5 @@ const userSchema = new Schema<IUser>(
   },
   { timestamps: true }
 );
-
+// Note: Indexes on clerkId and email are automatically created by unique: true
 export const User = mongoose.models?.User || mongoose.model("User", userSchema);

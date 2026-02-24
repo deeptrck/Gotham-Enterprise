@@ -7,6 +7,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fetchScans, fetchResult } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
+import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
 
 type ScanRecord = {
@@ -118,7 +119,7 @@ export default function HistoryPage() {
           ))}
         </div>
 
-        {loading && <p className="text-center text-gray-500 dark:text-gray-400">Loading...</p>}
+        {loading && <LoadingSpinner message="Loading scan history..." />}
 
         {!loading && (
           <div className="overflow-x-auto">

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchAllResults } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
+import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
 
 interface ScanResult {
@@ -91,11 +92,7 @@ export default function ResultsClient() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black text-black dark:text-white">
-        <p className="text-lg">Loading results...</p>
-      </div>
-    );
+    return <LoadingSpinner fullScreen message="Loading scan results..." />;
   }
 
   if (error) {
