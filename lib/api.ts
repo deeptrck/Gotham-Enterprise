@@ -63,19 +63,38 @@ export async function createScan(scanData: CreateScanInput) {
   try {
     const scanId = `scan-${Date.now()}`;
 
+    const isMultipartUpload = scanData.file instanceof File;
     const response = await fetch("/api/scans", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        scanId,
-        ...scanData, // includes url or file
-      }),
+      ...(isMultipartUpload
+        ? {
+            credentials: "include" as const,
+            body: (() => {
+              const formData = new FormData();
+              formData.append("file", scanData.file as File);
+              return formData;
+            })(),
+          }
+        : {
+            headers: { "Content-Type": "application/json" },
+            credentials: "include" as const,
+            body: JSON.stringify({
+              scanId,
+              ...scanData,
+            }),
+          }),
     });
 
     if (!response.ok) {
-      const errBody = await response.json().catch(() => null);
-      throw new Error(errBody?.error || "Failed to create scan");
+      const raw = await response.text();
+      let message = "Failed to create scan";
+      try {
+        const parsed = JSON.parse(raw) as { error?: string; detail?: string; message?: string };
+        message = parsed.error || parsed.detail || parsed.message || message;
+      } catch {
+        if (raw?.trim()) message = raw;
+      }
+      throw new Error(message);
     }
 
     return await response.json();
@@ -123,6 +142,31 @@ export async function deleteResult(scanId: string) {
     return await response.json();
   } catch (error) {
     console.error("Error deleting result:", error);
+    throw error;
+  }
+}
+
+export async function submitResultFeedback(
+  scanId: string,
+  label: "FALSE_POSITIVE" | "FALSE_NEGATIVE",
+  comment?: string
+) {
+  try {
+    const response = await fetch(`/api/results/${scanId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ label, comment }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      throw new Error(errBody?.error || "Failed to submit feedback");
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error submitting result feedback:", error);
     throw error;
   }
 }

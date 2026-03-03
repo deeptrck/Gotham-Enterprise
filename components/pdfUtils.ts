@@ -32,6 +32,23 @@ export interface PdfResultDto {
   scanId?: string;
   createdAt?: string | Date;
   imageUrl?: string;
+  fusion?: {
+    score?: number;
+    status?: string;
+    weights?: {
+      fakecatcher?: number;
+      realityDefender?: number;
+    };
+  };
+  fakecatcher?: {
+    confidence?: number;
+    fake_prob?: number;
+    label?: string;
+  } | null;
+  realityDefender?: {
+    status?: string;
+    score?: number;
+  } | null;
 }
 
 
@@ -40,13 +57,34 @@ interface RdModelsContainer {
 }
 
 interface ParsedDescription {
-  rd?: RdModelsContainer;
+  rd?: RdModelsContainer & {
+    fakecatcher?: {
+      confidence?: number;
+      fake_prob?: number;
+      label?: string;
+    };
+    realityDefender?: {
+      status?: string;
+      score?: number;
+    };
+    fusion?: {
+      score?: number;
+      status?: string;
+      weights?: {
+        fakecatcher?: number;
+        realityDefender?: number;
+      };
+    };
+  };
 }
 
 export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null {
   if (!resultData) return null;
 
   let models: RdModel[] = [];
+  let fusion: PdfResultDto["fusion"];
+  let fakecatcher: PdfResultDto["fakecatcher"] = null;
+  let realityDefender: PdfResultDto["realityDefender"] = null;
 
   try {
     const parsedRaw: unknown = JSON.parse(resultData.description || "{}");
@@ -65,6 +103,9 @@ export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null 
 
     if (isParsedDescription(parsedRaw)) {
       models = parsedRaw.rd?.models ?? [];
+      fusion = parsedRaw.rd?.fusion;
+      fakecatcher = parsedRaw.rd?.fakecatcher ?? null;
+      realityDefender = parsedRaw.rd?.realityDefender ?? null;
     }
   } catch {
     console.warn("PDF Utils: Failed to parse RD description");
@@ -78,6 +119,9 @@ export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null 
     confidenceScore: resultData.confidenceScore,
     createdAt: resultData.createdAt,
     imageUrl: resultData.imageUrl,
+    fusion,
+    fakecatcher,
+    realityDefender,
     models: models.map((m) => ({
       name: m.name ?? "Unknown Model",
       status: m.status ?? "UNKNOWN",
@@ -212,6 +256,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
  
   infoY += 10;
   doc.text(`File Name: ${result.fileMeta?.name || result.fileName || "N/A"}`, margin, infoY);
+  doc.text(`Scan ID: ${result.scanId || "N/A"}`, margin, (infoY += lineHeight));
   doc.text(`Type: ${result.fileMeta?.type || result.fileType || "N/A"}`, margin, (infoY += lineHeight));
   doc.text(
     `Size: ${result.fileMeta?.size ? (result.fileMeta.size / 1024).toFixed(2) + " KB" : "N/A"}`,
@@ -219,7 +264,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
     (infoY += lineHeight)
   );
   doc.text(
-    `Uploaded: ${result.uploadedAt ? new Date(String(result.uploadedAt)).toLocaleString() : "N/A"}`,
+    `Uploaded: ${result.uploadedAt || result.createdAt ? new Date(String(result.uploadedAt || result.createdAt)).toLocaleString() : "N/A"}`,
     margin,
     (infoY += lineHeight)
   );
@@ -235,7 +280,11 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
   const status = result.status || "Unknown";
   const score = result.confidenceScore;
   const statusColor: [number, number, number] =
-    status === "MANIPULATED" ? [255, 0, 0] : [0, 128, 0];
+    status === "DEEPFAKE" || status === "MANIPULATED"
+      ? [255, 0, 0]
+      : status === "SUSPICIOUS"
+      ? [220, 140, 0]
+      : [0, 128, 0];
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
@@ -252,6 +301,9 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
     );
   }
 
+  doc.setTextColor(0);
+  doc.text(`Models Used: ${Array.isArray(result.models) ? result.models.length : 0}`, margin, (y += lineHeight));
+
   y += 10;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(11);
@@ -264,6 +316,64 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
   );
 
   y += 15;
+
+  // --- Fusion Summary ---
+  if (result.fusion) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text("Fusion Summary", margin, (y += 8));
+    doc.line(margin, y + 2, 190, y + 2);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(40);
+    doc.text(`Final fused status: ${result.fusion.status || "N/A"}`, margin, (y += 8));
+
+    if (typeof result.fusion.score === "number") {
+      doc.text(`Final fused confidence: ${(result.fusion.score * 100).toFixed(1)}%`, margin, (y += 6));
+    }
+
+    const fakeCatcherWeight = Math.round((result.fusion.weights?.fakecatcher || 0) * 100);
+    const realityDefenderWeight = Math.round((result.fusion.weights?.realityDefender || 0) * 100);
+    doc.text(`FakeCatcher weight: ${fakeCatcherWeight}%`, margin, (y += 6));
+    doc.text(
+      `Reality Defender weight: ${realityDefenderWeight}%`,
+      margin,
+      (y += 6),
+      { maxWidth: 170 }
+    );
+
+    const fcLabel = result.fakecatcher?.label || "N/A";
+    const fcFakeProb = typeof result.fakecatcher?.fake_prob === "number" ? `${(result.fakecatcher.fake_prob * 100).toFixed(1)}%` : "N/A";
+    const fcConfidence = typeof result.fakecatcher?.confidence === "number" ? `${result.fakecatcher.confidence.toFixed(1)}%` : "N/A";
+    doc.setFont("helvetica", "bold");
+    doc.text("FakeCatcher", margin, (y += 8));
+    doc.setFont("helvetica", "normal");
+    doc.text(`Label: ${fcLabel}`, margin, (y += 6), {
+      maxWidth: 170,
+    });
+    doc.text(`Fake probability: ${fcFakeProb}`, margin, (y += 6), {
+      maxWidth: 170,
+    });
+    doc.text(`Confidence: ${fcConfidence}`, margin, (y += 6), {
+      maxWidth: 170,
+    });
+
+    const rdStatus = result.realityDefender?.status || "N/A";
+    const rdScore = typeof result.realityDefender?.score === "number" ? `${(result.realityDefender.score * 100).toFixed(1)}%` : "N/A";
+    doc.setFont("helvetica", "bold");
+    doc.text("Reality Defender", margin, (y += 8));
+    doc.setFont("helvetica", "normal");
+    doc.text(`Status: ${rdStatus}`, margin, (y += 6), {
+      maxWidth: 170,
+    });
+    doc.text(`Score: ${rdScore}`, margin, (y += 6), {
+      maxWidth: 170,
+    });
+
+    y += 8;
+  }
 
   // --- Detailed Model Breakdown ---
   doc.setFont("helvetica", "bold");

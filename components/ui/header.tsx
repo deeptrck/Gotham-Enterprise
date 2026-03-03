@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { LogOut, LogIn, UserPlus, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { useUser, useClerk } from "@clerk/nextjs";
 import {
@@ -16,6 +16,45 @@ import {
 export default function Header() {
   const { user, isSignedIn } = useUser();
   const { signOut } = useClerk();
+  const [canAccessAdmin, setCanAccessAdmin] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkAdminAccess = async () => {
+      if (!isSignedIn) {
+        setCanAccessAdmin(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/admin/access", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          setCanAccessAdmin(false);
+          return;
+        }
+
+        const payload = (await response.json()) as { allowed?: boolean };
+        if (!cancelled) {
+          setCanAccessAdmin(payload.allowed === true);
+        }
+      } catch {
+        if (!cancelled) {
+          setCanAccessAdmin(false);
+        }
+      }
+    };
+
+    checkAdminAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
 
   return (
     <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 shadow-sm">
@@ -62,6 +101,14 @@ export default function Header() {
             >
               Dashboard
             </Link>
+            {canAccessAdmin && (
+              <Link
+                href="/admin/dashboard"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
+              >
+                Admin
+              </Link>
+            )}
             <Link
               href="/history"
               className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
@@ -157,6 +204,11 @@ export default function Header() {
                 <DropdownMenuItem asChild>
                   <Link href="/dashboard" className="text-gray-800 dark:text-gray-200">Dashboard</Link>
                 </DropdownMenuItem>
+                {canAccessAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin/dashboard" className="text-gray-800 dark:text-gray-200">Admin</Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem asChild>
                   <Link href="/results" className="text-gray-800 dark:text-gray-200">Results</Link>
                 </DropdownMenuItem>

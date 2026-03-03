@@ -9,6 +9,7 @@ Enterprise-grade dashboard and verification platform for media authenticity, bui
 - [Key Features](#key-features)  
 - [Tech Stack](#tech-stack)  
 - [Quick Start](#quick-start)
+- [API Reference](#api-reference)
 - [Database (MongoDB)](#database-mongodb)  
 - [Authentication (Clerk)](#authentication-clerk)  
 - [Getting Started](#getting-started)  
@@ -95,6 +96,13 @@ npm run dev
 3. **Visit http://localhost:3000**
 
 See `SETUP_INSTRUCTIONS.md` or `QUICKSTART.md` for detailed setup.
+
+---
+
+## API Reference
+
+- FakeCatcher backend URL: `https://facedetectionsystem.onrender.com`
+- Full endpoint docs: `api.md`
 
 ---
 

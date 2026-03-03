@@ -1,107 +1,97 @@
-import { connectToDatabase } from "@/lib/db";
-import { VerificationResult } from "@/lib/models/VerificationResult";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import * as Sentry from "@sentry/nextjs";
+import { getJobMeta } from "@/lib/fakecatcherStore";
 
-// Cache for results data
-interface ResultsResponse {
-  success: boolean;
-  data: unknown[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
-    hasNextPage: boolean;
-    hasPrevPage: boolean;
-  };
+const BACKEND_API_URL = (
+  process.env.BACKEND_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://facedetectionsystem.onrender.com"
+).replace(/\/$/, "");
+
+function buildBackendUrl(path: string) {
+  return `${BACKEND_API_URL}${path}`;
 }
 
-const resultsCache = new Map<string, { data: ResultsResponse; timestamp: number }>();
-const RESULTS_CACHE_TTL = 30 * 1000; // 30 seconds
+function mapJobStatus(status?: string) {
+  if (status === "done") return "AUTHENTIC";
+  if (status === "error") return "DEEPFAKE";
+  return "PROCESSING";
+}
 
-/**
- * GET /api/results - Fetch all scan results for the authenticated user with pagination
- */
 export async function GET(req: NextRequest) {
-  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  console.time(`results:${reqId}:total`);
-
   try {
-    console.time(`results:${reqId}:auth`);
     const { userId } = await auth();
-    console.timeEnd(`results:${reqId}:auth`);
-
     if (!userId) {
-      console.timeEnd(`results:${reqId}:total`);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    console.time(`results:${reqId}:connect`);
-    await connectToDatabase();
-    console.timeEnd(`results:${reqId}:connect`);
-
-    // Parse pagination params
     const url = new URL(req.url);
-    const pageParam = url.searchParams.get("page");
-    const limitParam = url.searchParams.get("limit");
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get("limit") || "20", 10)));
 
-    const page = Math.max(1, Number.isFinite(Number(pageParam)) ? parseInt(pageParam || "1", 10) : 1);
-    const limit = Math.max(1, Math.min(100, Number.isFinite(Number(limitParam)) ? parseInt(limitParam || "20", 10) : 20));
-    const skip = (page - 1) * limit;
+    const response = await fetch(buildBackendUrl("/jobs"), {
+      method: "GET",
+      cache: "no-store",
+    });
 
-    // Check cache first
-    const cacheKey = `results:${userId}:p${page}:l${limit}`;
-    const cached = resultsCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < RESULTS_CACHE_TTL) {
-      console.timeEnd(`results:${reqId}:total`);
-      return NextResponse.json(cached.data, { status: 200 });
+    if (!response.ok) {
+      const payload = await response.text();
+      return new NextResponse(payload, {
+        status: response.status,
+        headers: { "Content-Type": response.headers.get("content-type") || "application/json" },
+      });
     }
 
-    console.time(`results:${reqId}:queries`);
-    const settled = await Promise.allSettled([
-      VerificationResult.find({ userId })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl description modelsUsed features")
-        .maxTimeMS(5000)
-        .lean({ virtuals: false, getters: false })
-        .exec(),
-      VerificationResult.countDocuments({ userId }).maxTimeMS(3000),
-    ]);
-    console.timeEnd(`results:${reqId}:queries`);
-
-    const results = settled[0].status === 'fulfilled' ? settled[0].value : [];
-    const total = settled[1].status === 'fulfilled' ? settled[1].value : 0;
-    const pages = total > 0 ? Math.ceil(total / limit) : 0;
-
-    const responseData: ResultsResponse = {
-      success: true,
-      data: results,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages,
-        hasNextPage: page < pages,
-        hasPrevPage: page > 1,
-      },
+    const payload = (await response.json()) as {
+      jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }>;
     };
 
-    // Cache the response
-    resultsCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+    const entries = Object.entries(payload.jobs || {}).map(([jobId, job]) => {
+      const meta = getJobMeta(jobId);
+      return {
+        _id: jobId,
+        scanId: jobId,
+        fileName: meta?.fileName || job.filename || `video-${jobId}`,
+        status: mapJobStatus(job.status),
+        confidenceScore: 0,
+        createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
+        fileType: "video",
+        imageUrl: "",
+        description: JSON.stringify({ rd: { source: "fakecatcher", jobStatus: job.status } }),
+        modelsUsed: ["fakecatcher-rppg"],
+        features: [
+          `job_status:${job.status || "queued"}`,
+        ],
+      };
+    }).filter((row) => {
+      const meta = getJobMeta(row.scanId);
+      return !meta || meta.userId === userId;
+    });
 
-    console.timeEnd(`results:${reqId}:total`);
+    entries.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
-    return NextResponse.json(responseData, { status: 200 });
+    const total = entries.length;
+    const pages = total > 0 ? Math.ceil(total / limit) : 0;
+    const start = (page - 1) * limit;
+    const data = entries.slice(start, start + limit);
+
+    return NextResponse.json(
+      {
+        success: true,
+        data,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages,
+          hasNextPage: page < pages,
+          hasPrevPage: page > 1,
+        },
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(`Error fetching results [${reqId}]:`, error);
-    Sentry.captureException(error);
-    try {
-      console.timeEnd(`results:${reqId}:total`);
-    } catch (e) {}
+    console.error("Error fetching results:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

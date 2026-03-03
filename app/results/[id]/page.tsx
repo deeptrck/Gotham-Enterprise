@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { fetchResult } from "@/lib/api";
+import { fetchResult, submitResultFeedback } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { FileDown } from "lucide-react";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
@@ -23,8 +23,35 @@ type ResultData = {
   confidenceScore: number;
   createdAt: string;
   imageUrl: string;
+  description?: string;
   modelsUsed: string[];
   rdModels: RdModel[];
+  fusionSummary?: {
+    score: number;
+    status: string;
+    weights: {
+      fakecatcher: number;
+      realityDefender: number;
+    };
+  };
+  fakecatcherSummary?: {
+    confidence?: number;
+    fake_prob?: number;
+    label?: string;
+  } | null;
+  realityDefenderSummary?: {
+    status?: string;
+    score?: number;
+  } | null;
+  feedbackSummary?: {
+    falsePositive: number;
+    falseNegative: number;
+    total: number;
+  };
+  userFeedback?: {
+    label: "FALSE_POSITIVE" | "FALSE_NEGATIVE";
+    createdAt: string;
+  } | null;
 };
 
 const modelMap: Record<string, { label: string; description: string }> = {
@@ -42,6 +69,8 @@ export default function ResultsPage() {
   const [resultData, setResultData] = useState<ResultData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState<"FALSE_POSITIVE" | "FALSE_NEGATIVE" | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
 type ParsedDescription = {
   rd?: {
@@ -50,6 +79,23 @@ type ParsedDescription = {
       status: "MANIPULATED" | "AUTHENTIC" | "SUSPICIOUS" | string;
       score: number;
     }[];
+    fakecatcher?: {
+      confidence?: number;
+      fake_prob?: number;
+      label?: string;
+    };
+    realityDefender?: {
+      status?: string;
+      score?: number;
+    };
+    fusion?: {
+      score?: number;
+      status?: string;
+      weights?: {
+        fakecatcher?: number;
+        realityDefender?: number;
+      };
+    };
   };
 };
 
@@ -65,7 +111,7 @@ useEffect(() => {
       return;
     }
 
-    const data = await fetchResult(scanId);
+      const data = await fetchResult(scanId);
 
       let parsed: ParsedDescription = {};
       try {
@@ -88,12 +134,30 @@ useEffect(() => {
         confidenceScore: data.confidenceScore,
         createdAt: data.createdAt,
         imageUrl: data.imageUrl || "https://via.placeholder.com/260x180.png?text=Image",
+        description: data.description,
         modelsUsed: data.modelsUsed || [],
         rdModels,
+        fusionSummary: parsed.rd?.fusion
+          ? {
+              score: typeof parsed.rd.fusion.score === "number" ? parsed.rd.fusion.score : 0,
+              status: parsed.rd.fusion.status || "UNKNOWN",
+              weights: {
+                fakecatcher: typeof parsed.rd.fusion.weights?.fakecatcher === "number" ? parsed.rd.fusion.weights.fakecatcher : 1,
+                realityDefender:
+                  typeof parsed.rd.fusion.weights?.realityDefender === "number"
+                    ? parsed.rd.fusion.weights.realityDefender
+                    : 0,
+              },
+            }
+          : undefined,
+        fakecatcherSummary: parsed.rd?.fakecatcher || null,
+        realityDefenderSummary: parsed.rd?.realityDefender || null,
+        feedbackSummary: data.feedbackSummary,
+        userFeedback: data.userFeedback,
       });
-    } catch {
+    } catch (err) {
       setError("Failed to load result");
-      Sentry.captureException(error);
+      Sentry.captureException(err);
     } finally {
       setLoading(false);
     }
@@ -101,6 +165,33 @@ useEffect(() => {
 
   load();
 }, [isSignedIn, id]);
+
+  const handleFeedbackClick = async (label: "FALSE_POSITIVE" | "FALSE_NEGATIVE") => {
+    if (!resultData) return;
+
+    setFeedbackLoading(label);
+    setFeedbackMessage(null);
+
+    try {
+      const response = await submitResultFeedback(resultData.scanId, label);
+
+      setResultData((prev) =>
+        prev
+          ? {
+              ...prev,
+              feedbackSummary: response.summary,
+              userFeedback: response.userFeedback,
+            }
+          : prev
+      );
+
+      setFeedbackMessage("Feedback saved. Thank you.");
+    } catch (err) {
+      setFeedbackMessage(err instanceof Error ? err.message : "Failed to submit feedback");
+    } finally {
+      setFeedbackLoading(null);
+    }
+  };
 
   if (loading)
     return <div className="h-screen flex items-center justify-center">Loading…</div>;
@@ -127,17 +218,18 @@ useEffect(() => {
       <main className="max-w-6xl mx-auto w-full px-6 pb-16">
         {/* Download Button */}
         <div className="flex justify-end mb-6">
-      <button
-onClick={() => {
-    if (!resultData) return;
-    const dto = mapToPdfDto(resultData);
-    if (!dto) return;
-    handleDownloadPDF(dto);
-  }}        className="flex items-center gap-2 px-5 py-2.5 bg-sky-400 text-white rounded-lg shadow-md hover:bg-sky-500 transition"
-      >
-        <FileDown className="w-4 h-4" />
-        Download PDF
-      </button>
+          <button
+            onClick={() => {
+              if (!resultData) return;
+              const dto = mapToPdfDto(resultData);
+              if (!dto) return;
+              handleDownloadPDF(dto);
+            }}
+            className="flex items-center gap-2 px-5 py-2.5 bg-sky-400 text-white rounded-lg shadow-md hover:bg-sky-500 transition"
+          >
+            <FileDown className="w-4 h-4" />
+            Download PDF
+          </button>
         </div>
 
         {/* Top Section */}
@@ -170,6 +262,93 @@ onClick={() => {
               <p><span className="font-semibold">File Type:</span> {resultData.fileType}</p>
             </div>
           </div>
+        </div>
+
+        <div className="mt-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-neutral-800">
+          <h3 className="text-lg font-semibold mb-3">Fusion summary</h3>
+
+          {resultData.fusionSummary ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <p>
+                  <span className="font-semibold">Final fused status:</span> {resultData.fusionSummary.status}
+                </p>
+                <p>
+                  <span className="font-semibold">Final fused confidence:</span> {(resultData.fusionSummary.score * 100).toFixed(1)}%
+                </p>
+                <p>
+                  <span className="font-semibold">FakeCatcher weight:</span> {(resultData.fusionSummary.weights.fakecatcher * 100).toFixed(0)}%
+                </p>
+                <p>
+                  <span className="font-semibold">Reality Defender weight:</span> {(resultData.fusionSummary.weights.realityDefender * 100).toFixed(0)}%
+                </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3">
+                  <p className="font-semibold mb-1">FakeCatcher</p>
+                  <p>Label: {resultData.fakecatcherSummary?.label || "N/A"}</p>
+                  <p>Fake probability: {typeof resultData.fakecatcherSummary?.fake_prob === "number" ? `${(resultData.fakecatcherSummary.fake_prob * 100).toFixed(1)}%` : "N/A"}</p>
+                  <p>Confidence: {typeof resultData.fakecatcherSummary?.confidence === "number" ? `${resultData.fakecatcherSummary.confidence.toFixed(1)}%` : "N/A"}</p>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3">
+                  <p className="font-semibold mb-1">Reality Defender</p>
+                  <p>Status: {resultData.realityDefenderSummary?.status || "N/A"}</p>
+                  <p>
+                    Score: {typeof resultData.realityDefenderSummary?.score === "number" ? `${(resultData.realityDefenderSummary.score * 100).toFixed(1)}%` : "N/A"}
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Fusion details are not available for this result.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-neutral-800">
+          <h3 className="text-lg font-semibold mb-3">Result feedback</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Help improve detection quality by marking this result if it was incorrect.
+          </p>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => handleFeedbackClick("FALSE_POSITIVE")}
+              disabled={feedbackLoading !== null}
+              className={`px-4 py-2 rounded-lg border transition ${
+                resultData.userFeedback?.label === "FALSE_POSITIVE"
+                  ? "bg-yellow-100 border-yellow-400 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300"
+                  : "bg-white border-gray-300 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-200"
+              } disabled:opacity-60`}
+            >
+              {feedbackLoading === "FALSE_POSITIVE" ? "Saving..." : "Mark as False Positive"}
+            </button>
+
+            <button
+              onClick={() => handleFeedbackClick("FALSE_NEGATIVE")}
+              disabled={feedbackLoading !== null}
+              className={`px-4 py-2 rounded-lg border transition ${
+                resultData.userFeedback?.label === "FALSE_NEGATIVE"
+                  ? "bg-red-100 border-red-400 text-red-800 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300"
+                  : "bg-white border-gray-300 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-gray-200"
+              } disabled:opacity-60`}
+            >
+              {feedbackLoading === "FALSE_NEGATIVE" ? "Saving..." : "Mark as False Negative"}
+            </button>
+          </div>
+
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+            {resultData.feedbackSummary?.total
+              ? `Community feedback: ${resultData.feedbackSummary.falsePositive} false positive, ${resultData.feedbackSummary.falseNegative} false negative`
+              : "No feedback yet for this result."}
+          </div>
+
+          {feedbackMessage && (
+            <p className="mt-2 text-sm text-sky-600 dark:text-sky-400">{feedbackMessage}</p>
+          )}
         </div>
 
         {/* Model Results */}

@@ -11,14 +11,16 @@ export default function PaymentSuccessClient() {
   const router = useRouter();
   const reference = searchParams.get("reference");
 
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "success" | "error">(() =>
+    reference ? "loading" : "error"
+  );
   const [userCredits, setUserCredits] = useState(0);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState(() =>
+    reference ? "" : "No payment reference found"
+  );
 
   useEffect(() => {
     if (!reference) {
-      setStatus("error");
-      setErrorMessage("No payment reference found");
       return;
     }
 

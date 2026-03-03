@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Check, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Check, XCircle, AlertCircle } from "lucide-react";
 import { fetchResult } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import * as Sentry from "@sentry/nextjs";

@@ -183,7 +183,7 @@ export default function Dashboard() {
     };
 
     loadData();
-  }, [isSignedIn]); // Removed buildUsage dependency
+  }, [isSignedIn, buildUsage]);
 
   // Update usage data when filter changes
   useEffect(() => {

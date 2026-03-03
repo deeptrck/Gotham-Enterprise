@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { UploadCloud, Link2, Image as ImageIcon, Video, AudioWaveform, Shield, Globe, UsersRound } from "lucide-react";
+import { UploadCloud, Image as ImageIcon, Video, AudioWaveform, Shield, Globe, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { createScan } from "@/lib/api";
 import { CheckCircle, XCircle, Clock } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
@@ -67,53 +66,20 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = files[i];
 
     try {
-      // Convert file to Base64 with progress
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-
-        reader.onloadstart = () => updateProgress(file.name, 0, "uploading");
-        reader.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = (event.loaded / event.total) * 100;
-            updateProgress(file.name, percent / 2, "uploading"); // half progress for reading
-          }
-        };
-        reader.onload = () => {
-          updateProgress(file.name, 50, "uploading"); // reading done, halfway
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = () => {
-          updateProgress(file.name, 0, "error", "File read failed");
-          reject(new Error("File read failed"));
-        };
-      });
+      updateProgress(file.name, 20, "uploading");
 
       // Call API
-      const response = await fetch("/api/scans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: file.name,
-          fileType: file.type.startsWith("image/")
-            ? "image"
-            : file.type.startsWith("video/")
-            ? "video"
-            : "audio",
-          base64,
-        }),
+      const result = await createScan({
+        fileName: file.name,
+        fileType: file.type.startsWith("image/")
+          ? "image"
+          : file.type.startsWith("video/")
+          ? "video"
+          : "audio",
+        file,
       });
 
-      const result = await response.json(); // read only once
-
-      if (!response.ok) {
-        const errMsg = result.error || "Upload failed";
-        setError(errMsg);
-        updateProgress(file.name, 0, "error", errMsg);
-        setLoading(false);
-        continue; // skip this file and continue with the next
-      }
+      updateProgress(file.name, 80, "uploading");
 
       // Success
       results.push(result);
@@ -137,20 +103,6 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     router.push(`/results/bulk?ids=${results.map(r => r.scanId).join(",")}`);
   }
   
-const successfulResults = results.filter(r => r.status === "done");
-
-if (successfulResults.length === 0) {
-  return;
-}
-
-if (successfulResults.length === 1) {
-  console.log("Single upload result:", successfulResults);
-  router.push(`/results/${successfulResults[0].scanId}`);
-} else {
-  console.log("Bulk upload results:", successfulResults);
-  router.push(`/results/bulk?ids=${successfulResults.map(r => r.scanId).join(",")}`);
-}
-
 };
 
 const handleUrlSubmit = async () => {

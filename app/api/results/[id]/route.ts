@@ -1,140 +1,172 @@
-import { connectToDatabase } from "@/lib/db";
-import { VerificationResult } from "@/lib/models/VerificationResult";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import * as Sentry from "@sentry/nextjs";
+import { getJobFeedbackSummary, getJobMeta, getJobRdAnalysis, getUserJobFeedback } from "@/lib/fakecatcherStore";
 
-export interface VerificationResultType {
-  fileName?: string;
-  scanId: string;
-  status?: string;
-  confidenceScore?: number;
-  createdAt: string | Date;
-  fileType?: string;
-  imageUrl?: string;
-  description?: string;
-  modelsUsed?: string[];
-  features?: string[];
+const BACKEND_API_URL = (
+  process.env.BACKEND_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://facedetectionsystem.onrender.com"
+).replace(/\/$/, "");
+
+function buildBackendUrl(path: string) {
+  return `${BACKEND_API_URL}${path}`;
 }
 
-// Cache for frequently accessed results
-const resultCache = new Map<string, { data: VerificationResultType; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+type FakeCatcherJobResult = {
+  label?: "REAL" | "FAKE" | "UNCERTAIN" | string;
+  confidence?: number;
+  fake_prob?: number;
+  total_frames?: number;
+  face_pct?: number;
+  n_segments?: number;
+};
 
-// GET: Fetch specific result by scanId
+type FakeCatcherJobResponse = {
+  job_id: string;
+  status: "queued" | "processing" | "done" | "error";
+  filename?: string;
+  age_sec?: number;
+  result?: FakeCatcherJobResult;
+  error?: string | null;
+};
+
+function mapJobToStatus(label?: string) {
+  if (label === "REAL") return "AUTHENTIC";
+  if (label === "FAKE") return "DEEPFAKE";
+  return "SUSPICIOUS";
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function mapRdModelStatus(status?: string) {
+  if (status === "MANIPULATED") return "MANIPULATED";
+  if (status === "AUTHENTIC") return "AUTHENTIC";
+  return "SUSPICIOUS";
+}
+
+function mapRdToManipulationScore(status?: string, score?: number) {
+  const normalized = clamp01(typeof score === "number" ? score : 0);
+  if (status === "AUTHENTIC") return 1 - normalized;
+  if (status === "MANIPULATED") return normalized;
+  return 0.5;
+}
+
+function mapCombinedStatus(score: number) {
+  if (score >= 0.65) return "DEEPFAKE";
+  if (score <= 0.35) return "AUTHENTIC";
+  return "SUSPICIOUS";
+}
+
 export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await context.params;
-  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-
-  console.time(`result:${reqId}:total`);
-
-  try {
-    console.time(`result:${reqId}:auth`);
-    const { userId } = await auth();
-    console.timeEnd(`result:${reqId}:auth`);
-
-    if (!userId) {
-      console.timeEnd(`result:${reqId}:total`);
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Check cache first
-    const cacheKey = `${userId}:${id}`;
-    const cached = resultCache.get(cacheKey);
-
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.timeEnd(`result:${reqId}:total`);
-      return NextResponse.json(cached.data, { status: 200 });
-    }
-
-    console.time(`result:${reqId}:connect`);
-    await connectToDatabase();
-    console.timeEnd(`result:${reqId}:connect`);
-
-    // Select relevant fields only
-    console.time(`result:${reqId}:find`);
-    const result = await VerificationResult.findOne({
-      scanId: id,
-      userId,
-    })
-      .select(
-        "fileName scanId status confidenceScore createdAt fileType imageUrl description modelsUsed features"
-      )
-      .lean<VerificationResultType>() // <-- Fully typed lean()
-      .maxTimeMS(10000);
-
-    console.timeEnd(`result:${reqId}:find`);
-
-    if (!result) {
-      console.timeEnd(`result:${reqId}:total`);
-      return NextResponse.json({ error: "Result not found" }, { status: 404 });
-    }
-
-    // Cache the result
-    resultCache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now(),
-    });
-
-    console.timeEnd(`result:${reqId}:total`);
-    return NextResponse.json(result, { status: 200 });
-  } catch (err) {
-    console.error(`Error fetching result [${reqId}]:`, err);
-    Sentry.captureException(err);
-
-    try {
-      console.timeEnd(`result:${reqId}:total`);
-    } catch {}
-
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE: Delete a result
-export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
 
   try {
     const { userId } = await auth();
-
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await connectToDatabase();
-
-    const result = await VerificationResult.findOneAndDelete({
-      scanId: id,
-      userId,
-    });
-
-    if (!result) {
+    const meta = getJobMeta(id);
+    if (meta && meta.userId !== userId) {
       return NextResponse.json({ error: "Result not found" }, { status: 404 });
     }
 
-    // Clear cache
-    const cacheKey = `${userId}:${id}`;
-    resultCache.delete(cacheKey);
+    const response = await fetch(buildBackendUrl(`/jobs/${id}`), {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const payload = await response.text();
+      return new NextResponse(payload, {
+        status: response.status,
+        headers: { "Content-Type": response.headers.get("content-type") || "application/json" },
+      });
+    }
+
+    const job = (await response.json()) as FakeCatcherJobResponse;
+
+    const label = job.result?.label;
+    const fakeProb = typeof job.result?.fake_prob === "number" ? job.result.fake_prob : 0;
+    const modelScore = label === "REAL" ? 1 - fakeProb : label === "FAKE" ? fakeProb : 0.5;
+    const modelStatus = label === "REAL" ? "AUTHENTIC" : label === "FAKE" ? "MANIPULATED" : "SUSPICIOUS";
+    const rd = getJobRdAnalysis(id);
+
+    const rdScore = rd ? mapRdToManipulationScore(rd.status, rd.score) : null;
+    const combinedScore = rdScore === null
+      ? clamp01(modelScore)
+      : clamp01(modelScore * 0.6 + rdScore * 0.4);
+    const combinedStatus = mapCombinedStatus(combinedScore);
+
+    const allModels = [
+      {
+        name: "fakecatcher-rppg",
+        status: modelStatus,
+        score: clamp01(modelScore),
+      },
+      ...((rd?.models || []).map((m) => ({
+        name: m.name || "rd-model",
+        status: mapRdModelStatus(m.status),
+        score: clamp01(m.score),
+      }))),
+    ];
+
+    const description = JSON.stringify({
+      rd: {
+        source: rd ? "fakecatcher+reality-defender" : "fakecatcher",
+        jobStatus: job.status,
+        models: allModels,
+        fakecatcher: job.result || null,
+        realityDefender: rd || null,
+        fusion: {
+          score: combinedScore,
+          status: combinedStatus,
+          weights: rd ? { fakecatcher: 0.6, realityDefender: 0.4 } : { fakecatcher: 1, realityDefender: 0 },
+        },
+      },
+    });
+
+    const createdAt = meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString();
+    const feedbackSummary = getJobFeedbackSummary(id);
+    const userFeedback = getUserJobFeedback(id, userId);
 
     return NextResponse.json(
-      { message: "Result deleted successfully" },
+      {
+        fileName: meta?.fileName || job.filename || `video-${id}`,
+        scanId: id,
+        fileType: "video",
+        status: rd ? combinedStatus : mapJobToStatus(label),
+        confidenceScore: Math.round(combinedScore * 1000) / 10,
+        createdAt,
+        imageUrl: "",
+        modelsUsed: allModels.map((m) => m.name),
+        description,
+        features: [
+          `job_status:${job.status}`,
+          `fake_prob:${fakeProb}`,
+          `label:${label || "UNCERTAIN"}`,
+          rd ? `rd_status:${rd.status}` : "rd_status:unavailable",
+          `fusion_score:${combinedScore.toFixed(4)}`,
+        ],
+        feedbackSummary,
+        userFeedback,
+      },
       { status: 200 }
     );
-  } catch (err) {
-    console.error("Error deleting result:", err);
-    Sentry.captureException(err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error("Error fetching result:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+}
+
+export async function DELETE() {
+  return NextResponse.json(
+    { error: "Delete is not supported with FakeCatcher job-backed results." },
+    { status: 405 }
+  );
 }

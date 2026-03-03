@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Zap } from "lucide-react";
+import { Check } from "lucide-react";
 import { createPaystackTransaction, subscribeToTrial } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
@@ -11,7 +11,6 @@ export default function PricingBillingPage() {
   const router = useRouter();
   const { isSignedIn } = useUser();
   const [loadingRef, setLoadingRef] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
@@ -26,13 +25,6 @@ export default function PricingBillingPage() {
       setToastMessage(null);
     }, ms);
   };
-
-  // Test credit packages with USD amounts for Paystack (client uses USD only)
-  const creditPacks = [
-    { id: "small", usdAmount: 5, credits: 50, label: "50 Credits", savings: null },
-    { id: "medium", usdAmount: 20, credits: 300, label: "300 Credits", savings: "17% off" },
-    { id: "large", usdAmount: 40, credits: 650, label: "650 Credits", savings: "25% off" },
-  ];
 
   const plans = [
     {
@@ -107,33 +99,6 @@ export default function PricingBillingPage() {
   ];
 
 
-  const handleBuyCredits = async (pack: typeof creditPacks[0]) => {
-    if (!isSignedIn) {
-      setShowAuthModal(true);
-      showToast('Please sign in to continue');
-      return;
-    }
-
-    try {
-      setLoadingRef(pack.id + "-USD");
-      const amount = pack.usdAmount;
-      const res = await createPaystackTransaction(amount, pack.credits, "USD");
-      const authorizationUrl = res?.data?.authorization_url;
-      if (authorizationUrl) {
-        window.location.href = authorizationUrl;
-      } else {
-        console.error("No authorization URL returned", res);
-        showToast("Failed to initialize payment. Check console.");
-      }
-    } catch (err) {
-      console.error(err);
-      Sentry.captureException(err);
-      showToast("Error initializing payment. See console for details.");
-    } finally {
-      setLoadingRef(null);
-    }
-  };
-
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   type Plan = typeof plans[number];
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
@@ -156,7 +121,7 @@ export default function PricingBillingPage() {
       setLoadingRef(selectedPlan.id + "-plan-USD");
       const amount = billingPeriod === 'monthly' ? selectedPlan.usdAmountMonthly : selectedPlan.usdAmountYearly;
       if (amount == null) {
-        setError("Invalid pricing configuration. Please contact support.");
+        showToast("Invalid pricing configuration. Please contact support.");
         return;
       }
       const res = await createPaystackTransaction(amount, selectedPlan.credits, "USD");

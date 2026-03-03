@@ -1,4 +1,0 @@
-dist-workers/
-lib/*.js
-node_modules/
-*.log

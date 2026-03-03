@@ -4,9 +4,19 @@
  * This ensures server-side `auth()` can detect clerk middleware usage.
  * See: https://clerk.com/docs
  */
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export default clerkMiddleware();
+const isAdminDashboardRoute = createRouteMatcher(["/admin/dashboard(.*)"]);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (!isAdminDashboardRoute(req)) return;
+
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+});
 
 // Apply the middleware to API routes and all app pages (excluding next internals)
 export const config = {

@@ -1,4 +1,14 @@
-import verifyMedia, { RDResult } from "./realityDefender";
+export interface RDModelResult {
+  name: string;
+  status: "AUTHENTIC" | "MANIPULATED";
+  score: number;
+}
+
+export interface RDResult {
+  status: "AUTHENTIC" | "MANIPULATED";
+  score: number;
+  models?: RDModelResult[];
+}
 
 export interface BulkMedia {
   url?: string;
@@ -20,12 +30,7 @@ export async function verifyMediaBulk(
     while (queue.length > 0) {
       const media = queue.shift()!;
       try {
-        const res = await verifyMedia({
-          url: media.url,
-          fileBuffer: media.fileBuffer,
-          fileType: media.fileType,
-        });
-        results.push({ media, result: res });
+        throw new Error("Reality Defender is disabled. Use external backend verification endpoint.");
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         results.push({ media, error: message || "Verification failed" });

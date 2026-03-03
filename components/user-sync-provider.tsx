@@ -13,9 +13,14 @@ export default function UserSyncProvider({
 
   useEffect(() => {
     if (isSignedIn && user) {
+      const email = user.primaryEmailAddress?.emailAddress?.trim();
+      if (!email) return;
+
+      const fullName = user.fullName?.trim() || email.split("@")[0] || "User";
+
       syncUserToDb({
-        email: user.primaryEmailAddress?.emailAddress || "",
-        fullName: user.fullName || "",
+        email,
+        fullName,
         imageUrl: user.imageUrl,
       }).catch((error) => {
         console.error("Failed to sync user:", error);

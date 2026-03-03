@@ -13,12 +13,26 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { email, fullName, imageUrl } = body;
+    const rawEmail = typeof body?.email === "string" ? body.email.trim() : "";
+    const rawFullName = typeof body?.fullName === "string" ? body.fullName.trim() : "";
+    const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl : undefined;
+
+    if (!rawEmail) {
+      return NextResponse.json({ error: "Email is required for user sync" }, { status: 400 });
+    }
+
+    const email = rawEmail.toLowerCase();
+    const fullName = rawFullName || email.split("@")[0] || "User";
 
     await connectToDatabase();
 
     const user = await User.findOneAndUpdate(
-      { clerkId: userId },
+      {
+        $or: [
+          { clerkId: userId },
+          { email },
+        ],
+      },
       { clerkId: userId, email, fullName, imageUrl },
       { upsert: true, new: true }
     );
@@ -27,6 +41,13 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Error syncing user:", error);
     Sentry.captureException(error);
+    const err = error as { code?: number; keyPattern?: Record<string, unknown> };
+    if (err?.code === 11000 && err?.keyPattern?.email) {
+      return NextResponse.json(
+        { error: "Email is already linked to another account" },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

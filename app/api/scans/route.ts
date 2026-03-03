@@ -1,239 +1,282 @@
-import { connectToDatabase } from "@/lib/db";
-import { VerificationResult } from "@/lib/models/VerificationResult";
-import { User } from "@/lib/models/User";
-import verifyMedia, { RDModelResult } from "@/lib/realityDefender";
-import { verifyMediaBulk, BulkMedia } from "@/lib/verifyMediaBulk";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import * as Sentry from "@sentry/nextjs";
+import { getJobMeta, setJobMeta, setJobRdAnalysis } from "@/lib/fakecatcherStore";
+import { verifyMedia } from "@/lib/realityDefender";
 
-interface IncomingFile {
-  base64?: string;
-  url?: string;
-  fileType: string;
-  fileName: string;
+const BACKEND_API_URL = (
+  process.env.BACKEND_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://facedetectionsystem.onrender.com"
+).replace(/\/$/, "");
+
+function buildBackendUrl(path: string) {
+  return `${BACKEND_API_URL}${path}`;
 }
 
-interface VerificationResultDoc {
-  _id: string;
-  scanId: string;
-  fileName: string;
-  status: "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE";
-  confidenceScore: number;
-  createdAt: string;
-  fileType: string;
-  imageUrl?: string;
-  modelsUsed?: string[];
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const ACCEPTED_VIDEO_EXT = [".mp4", ".avi", ".mov", ".mkv"];
+
+function hasAcceptedVideoExtension(name: string) {
+  const lower = name.toLowerCase();
+  return ACCEPTED_VIDEO_EXT.some((ext) => lower.endsWith(ext));
 }
 
-interface CachedScan {
-  data: VerificationResultDoc[];
-  timestamp: number;
-}
-
-// Cache for user scans
-const scansCache = new Map<string, CachedScan>();
-const SCANS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-// GET: fetch all scans for the signed-in user
-export async function GET() {
-  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  console.time(`scans:${reqId}:total`);
-
+function parseBackendError(raw: string) {
   try {
-    console.time(`scans:${reqId}:auth`);
-    const { userId } = await auth();
-    console.timeEnd(`scans:${reqId}:auth`);
-
-    if (!userId) {
-      console.timeEnd(`scans:${reqId}:total`);
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Check cache first
-    const cacheKey = `scans:${userId}`;
-    const cached = scansCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < SCANS_CACHE_TTL) {
-      console.timeEnd(`scans:${reqId}:total`);
-      return NextResponse.json(cached.data, { status: 200 });
-    }
-
-    console.time(`scans:${reqId}:connect`);
-    await connectToDatabase();
-    console.timeEnd(`scans:${reqId}:connect`);
-
-    // Use compound index for optimal performance
-    console.time(`scans:${reqId}:find-scans`);
-    const scans = await VerificationResult.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-      .maxTimeMS(5000) // 5 second timeout
-      .lean({ virtuals: false, getters: false, versionKey: false })
-      .exec() as unknown as VerificationResultDoc[];
-    
-    console.timeEnd(`scans:${reqId}:find-scans`);
-
-    // Cache the results
-    scansCache.set(cacheKey, { data: scans, timestamp: Date.now() });
-
-    console.timeEnd(`scans:${reqId}:total`);
-    return NextResponse.json(scans, { status: 200 });
-  } catch (error) {
-    console.error(`Error fetching scans [${reqId}]:`, error);
-    Sentry.captureException(error);
-    try { console.timeEnd(`scans:${reqId}:total`); } catch (e) {}
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const parsed = JSON.parse(raw) as { error?: string; detail?: string; message?: string };
+    return parsed.error || parsed.detail || parsed.message || raw;
+  } catch {
+    return raw || "Backend error";
   }
 }
 
-// POST: create new scan(s) - optimized batch processing
-export async function POST(req: NextRequest) {
-  const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  console.time(`scan-create:${reqId}:total`);
+async function postVideoWithRetry(payload: FormData, attempts = 2) {
+  let lastStatus = 503;
+  let lastBody = "";
+  let lastContentType = "application/json";
 
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const body = await req.json();
-    await connectToDatabase();
-
-    console.time(`scan-create:${reqId}:find-user`);
-    const user = await User.findOne({ clerkId: userId });
-    console.timeEnd(`scan-create:${reqId}:find-user`);
-    
-    if (!user || user.credits <= 0) {
-      return NextResponse.json(
-        { error: "Insufficient credits" },
-        { status: 402 }
-      );
-    }
-
-    // Clear scans cache for this user
-    scansCache.delete(`scans:${userId}`);
-
-    // Handle bulk verification
-    if (Array.isArray(body.files) && body.files.length > 0) {
-      const bulkItems: BulkMedia[] = body.files.map((f: IncomingFile) => ({
-        fileBuffer: f.base64
-          ? Buffer.from(f.base64.replace(/^data:.+;base64,/, ""), "base64")
-          : undefined,
-        url: f.url,
-        fileType: f.fileType,
-        fileName: f.fileName,
-      }));
-
-      console.time(`scan-create:${reqId}:bulk-verify`);
-      const bulkResults = await verifyMediaBulk(bulkItems, 3);
-      console.timeEnd(`scan-create:${reqId}:bulk-verify`);
-
-      const savedResults = [];
-      let creditCost = 0;
-
-      console.time(`scan-create:${reqId}:save-results`);
-      for (const { media, result } of bulkResults) {
-        if (!result) continue;
-
-        const overallScore = typeof result.score === "number" ? result.score : 0;
-        const confidenceScore = Math.round(overallScore * 100);
-
-        let mappedStatus: "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE" = "SUSPICIOUS";
-        if (result.status === "AUTHENTIC") mappedStatus = "AUTHENTIC";
-        else if (result.status === "MANIPULATED")
-          mappedStatus = overallScore >= 0.5 ? "DEEPFAKE" : "SUSPICIOUS";
-
-        const modelsUsed = Array.isArray(result.models)
-          ? result.models.map((m) => m.name)
-          : [];
-
-        const vr = new VerificationResult({
-          userId,
-          scanId: media.fileName || `scan-${Date.now()}-${Math.random()}`,
-          fileName: media.fileName || "unknown",
-          fileType: media.fileType || "image",
-          status: mappedStatus,
-          confidenceScore,
-          modelsUsed,
-          imageUrl: media.url,
-          description: JSON.stringify({ rd: result }),
-          features:
-            result.models?.map(
-              (m: RDModelResult) =>
-                `${m.name}:${m.status}:${Math.round(m.score * 100)}`
-            ) || [],
-        });
-
-        await vr.save();
-        savedResults.push(vr);
-        creditCost += 1;
-      }
-      console.timeEnd(`scan-create:${reqId}:save-results`);
-
-      // Update user credits in one operation
-      user.credits -= creditCost;
-      await user.save();
-
-      console.timeEnd(`scan-create:${reqId}:total`);
-      return NextResponse.json(savedResults, { status: 201 });
-    }
-
-    // Single-file verification
-    const mediaUrl = (body.fileUrl || body.imageUrl || body.url) as string | undefined;
-    const base64 = body.base64 as string | undefined;
-
-    if (!mediaUrl && !base64) throw new Error("No media provided");
-
-    console.time(`scan-create:${reqId}:single-verify`);
-    let rdResult = null;
-    if (base64) {
-      const buffer = Buffer.from(base64.replace(/^data:.+;base64,/, ""), "base64");
-      rdResult = await verifyMedia({ fileBuffer: buffer, fileType: body.fileType });
-    } else if (mediaUrl) {
-      rdResult = await verifyMedia({ url: mediaUrl, fileType: body.fileType });
-    }
-    console.timeEnd(`scan-create:${reqId}:single-verify`);
-    
-    if (!rdResult) {
-      return NextResponse.json(
-        { error: "Failed to retrieve Reality Defender results" },
-        { status: 500 }
-      );
-    }
-
-    const overallScore = typeof rdResult.score === "number" ? rdResult.score : 0;
-    const confidenceScore = Math.round(overallScore * 100);
-    let mappedStatus: "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE" = "SUSPICIOUS";
-    if (rdResult.status === "AUTHENTIC") mappedStatus = "AUTHENTIC";
-    else if (rdResult.status === "MANIPULATED") mappedStatus = overallScore >= 0.5 ? "DEEPFAKE" : "SUSPICIOUS";
-
-    const modelsUsed = Array.isArray(rdResult.models) ? rdResult.models.map((m) => m.name) : [];
-
-    console.time(`scan-create:${reqId}:save-single`);
-    const result = new VerificationResult({
-      userId,
-      scanId: body.scanId || `scan-${Date.now()}`,
-      fileName: body.fileName || mediaUrl?.split("/").pop() || "unknown",
-      fileType: body.fileType || "image",
-      status: mappedStatus,
-      confidenceScore,
-      modelsUsed,
-      imageUrl: mediaUrl || `data:${body.fileType};base64,${base64}`, 
-      url: body.url || mediaUrl, 
-      description: JSON.stringify({ rd: rdResult }),
-      features: rdResult.models?.map((m: RDModelResult) => `${m.name}:${m.status}:${Math.round(m.score * 100)}`) || [],
+  for (let i = 0; i < attempts; i++) {
+    const response = await fetch(buildBackendUrl("/predict/video"), {
+      method: "POST",
+      body: payload,
+      cache: "no-store",
     });
 
-    await result.save();
-    user.credits -= 1;
-    await user.save();
-    console.timeEnd(`scan-create:${reqId}:save-single`);
+    const responseBody = await response.text();
+    const contentType = response.headers.get("content-type") || "application/json";
 
-    console.timeEnd(`scan-create:${reqId}:total`);
-    return NextResponse.json(result, { status: 201 });
+    if (response.ok) {
+      return { ok: true as const, status: response.status, body: responseBody, contentType };
+    }
+
+    lastStatus = response.status;
+    lastBody = responseBody;
+    lastContentType = contentType;
+
+    const isTransient = response.status === 503 || response.status === 429;
+    if (!isTransient || i === attempts - 1) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (i + 1)));
+  }
+
+  return { ok: false as const, status: lastStatus, body: lastBody, contentType: lastContentType };
+}
+
+function getForwardHeaders(req: NextRequest) {
+  const contentType = req.headers.get("content-type");
+  const authorization = req.headers.get("authorization");
+
+  return {
+    ...(contentType ? { "Content-Type": contentType } : {}),
+    ...(authorization ? { Authorization: authorization } : {}),
+  };
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const response = await fetch(buildBackendUrl("/jobs"), {
+      method: "GET",
+      headers: getForwardHeaders(req),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const payload = await response.text();
+      return new NextResponse(payload, {
+        status: response.status,
+        headers: { "Content-Type": response.headers.get("content-type") || "application/json" },
+      });
+    }
+
+    const jobsPayload = await response.json() as { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> };
+    const jobs = jobsPayload.jobs || {};
+
+    const scans = Object.entries(jobs).map(([jobId, job]) => {
+      const meta = getJobMeta(jobId);
+      const mappedStatus = job.status === "done"
+        ? "AUTHENTIC"
+        : job.status === "error"
+        ? "DEEPFAKE"
+        : "PROCESSING";
+
+      return {
+        _id: jobId,
+        scanId: jobId,
+        fileName: meta?.fileName || job.filename || `video-${jobId}`,
+        fileType: "video",
+        status: mappedStatus,
+        confidenceScore: 0,
+        createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
+        imageUrl: "",
+      };
+    }).filter((item) => {
+      const meta = getJobMeta(item.scanId);
+      return !meta || meta.userId === userId;
+    });
+
+    return NextResponse.json(scans, { status: 200 });
   } catch (error) {
-    console.error("Error creating scan:", error);
-    Sentry.captureException(error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("Error proxying scans GET request:", error);
+    return NextResponse.json({ error: "Failed to reach backend" }, { status: 502 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const contentType = req.headers.get("content-type") || "";
+    let videoFile: File | null = null;
+    let fileName = "video-upload.mp4";
+
+    if (contentType.includes("multipart/form-data")) {
+      const incoming = await req.formData();
+      const maybeFile = incoming.get("file");
+      if (maybeFile instanceof File) {
+        videoFile = maybeFile;
+        fileName = maybeFile.name || fileName;
+      }
+    } else {
+      const body = await req.json() as { base64?: string; fileName?: string; fileType?: string; url?: string };
+
+      if (body.fileType && body.fileType !== "video") {
+        return NextResponse.json({ error: "FakeCatcher currently supports video upload flow only." }, { status: 400 });
+      }
+
+      if (body.url) {
+        return NextResponse.json({ error: "URL scanning is not supported by FakeCatcher. Upload a video file instead." }, { status: 400 });
+      }
+
+      if (!body.base64) {
+        return NextResponse.json({ error: "Missing video payload" }, { status: 400 });
+      }
+
+      fileName = body.fileName || fileName;
+      const safeName = fileName.toLowerCase();
+      if (!safeName.endsWith(".mp4") && !safeName.endsWith(".avi") && !safeName.endsWith(".mov") && !safeName.endsWith(".mkv")) {
+        return NextResponse.json({ error: "Unsupported format. Use: .mp4, .avi, .mov, .mkv" }, { status: 400 });
+      }
+
+      const buffer = Buffer.from(body.base64.replace(/^data:.+;base64,/, ""), "base64");
+      videoFile = new File([buffer], fileName, { type: "video/mp4" });
+    }
+
+    if (!videoFile) {
+      return NextResponse.json({ error: "No video file provided" }, { status: 400 });
+    }
+
+    if (!hasAcceptedVideoExtension(fileName)) {
+      return NextResponse.json(
+        { error: "Unsupported format. Use: .mp4, .avi, .mov, .mkv" },
+        { status: 400 }
+      );
+    }
+
+    if (videoFile.size > MAX_VIDEO_BYTES) {
+      return NextResponse.json(
+        { error: "Video exceeds 50 MB limit" },
+        { status: 413 }
+      );
+    }
+
+    const payload = new FormData();
+    payload.append("file", videoFile);
+
+    const shouldRunRD = Boolean(process.env.REALITY_DEFENDER_API_KEY);
+
+    let rdOutcome:
+      | {
+          status: string;
+          score: number;
+          requestId?: string;
+          models: Array<{ name: string; status: string; score: number }>;
+          error?: string;
+        }
+      | undefined;
+
+    if (shouldRunRD) {
+      try {
+        const arrayBuffer = await videoFile.arrayBuffer();
+        const rd = await verifyMedia({
+          fileBuffer: Buffer.from(arrayBuffer),
+          fileType: "video",
+        });
+
+        rdOutcome = {
+          requestId: rd.requestId,
+          status: rd.status,
+          score: Math.max(0, Math.min(1, rd.score || 0)),
+          models: (rd.models || []).map((model) => ({
+            name: model.name || "rd-model",
+            status: model.status || "UNKNOWN",
+            score: Math.max(0, Math.min(1, Number(model.score) || 0)),
+          })),
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Reality Defender verification failed";
+        rdOutcome = {
+          status: "ERROR",
+          score: 0,
+          models: [],
+          error: message,
+        };
+        console.warn("Reality Defender scan failed; continuing with FakeCatcher:", message);
+      }
+    }
+
+    const submit = await postVideoWithRetry(payload, 2);
+    if (!submit.ok) {
+      return NextResponse.json(
+        { error: parseBackendError(submit.body) },
+        { status: submit.status }
+      );
+    }
+
+    const parsed = JSON.parse(submit.body) as { job_id: string; status?: string; filename?: string };
+    setJobMeta(parsed.job_id, {
+      userId,
+      fileName: parsed.filename || fileName,
+      fileType: "video",
+      createdAt: new Date().toISOString(),
+    });
+
+    if (rdOutcome) {
+      setJobRdAnalysis(parsed.job_id, {
+        ...rdOutcome,
+        analyzedAt: new Date().toISOString(),
+      });
+    }
+
+    return NextResponse.json(
+      {
+        scanId: parsed.job_id,
+        status: parsed.status || "queued",
+        fileName: parsed.filename || fileName,
+        fileType: "video",
+        dualModel: rdOutcome
+          ? {
+              fakecatcher: true,
+              realityDefender: rdOutcome.status !== "ERROR",
+            }
+          : {
+              fakecatcher: true,
+              realityDefender: false,
+            },
+      },
+      { status: 202 }
+    );
+  } catch (error) {
+    console.error("Error proxying scans POST request:", error);
+    return NextResponse.json({ error: "Failed to reach backend" }, { status: 502 });
   }
 }
