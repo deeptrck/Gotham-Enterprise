@@ -5,10 +5,6 @@ import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import * as Sentry from "@sentry/nextjs";
 
-// Cache for dashboard data (in-memory; ephemeral on serverless)
-const dashboardCache = new Map<string, { data: DashboardResponse; timestamp: number }>();
-const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
-
 // Type for a single scan summary returned to the frontend
 type ScanSummary = {
   _id: string;
@@ -61,14 +57,6 @@ export async function GET(req: NextRequest) {
       Math.min(100, limitParam ? parseInt(limitParam, 10) : 20)
     );
 
-    // Check cache first
-    const cacheKey = `dashboard:${userId}:p${page}:l${limit}`;
-    const cached = dashboardCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL) {
-      console.timeEnd(`dashboard:${reqId}:total`);
-      return NextResponse.json(cached.data, { status: 200 });
-    }
-
     console.time(`dashboard:${reqId}:connect`);
     await connectToDatabase();
     console.timeEnd(`dashboard:${reqId}:connect`);
@@ -101,9 +89,6 @@ export async function GET(req: NextRequest) {
       page,
       limit,
     };
-
-    // Cache the response
-    dashboardCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
 
     console.timeEnd(`dashboard:${reqId}:total`);
     return NextResponse.json(responseData, { status: 200 });

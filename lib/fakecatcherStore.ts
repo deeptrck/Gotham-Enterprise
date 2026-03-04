@@ -1,7 +1,8 @@
 type JobMeta = {
   userId: string;
   fileName: string;
-  fileType: "video";
+  fileType: "image" | "video" | "audio";
+  source?: "fakecatcher" | "rd-only";
   createdAt: string;
 };
 

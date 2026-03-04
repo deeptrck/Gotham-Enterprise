@@ -132,6 +132,10 @@ export function mapToPdfDto(resultData: ResultData | null): PdfResultDto | null 
 
 // Model Map for PDF generation
 export const modelMap: Record<string, { label: string; description: string }> = {
+  "fakecatcher-rppg": {
+    label: "FakeCatcher rPPG",
+    description: "Analyzes subtle physiological facial signals in video to detect synthetic manipulation.",
+  },
   "rd-img-ensemble": {
     label: "Facial Analysis",
     description:
@@ -224,8 +228,8 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
   let infoY = infoStartY;
 
   // Header / Footer images (will be loaded to data URLs)
-  const headerImg = "/pdfHeader.png";
-  const footerImg = "/pdfFooter.png";
+  const headerImg = "/logo-dark.jpg";
+  const footerImg = "/logo-light.ico";
   const headerHeight = 32;
   const footerHeight = 25;
 
@@ -308,8 +312,14 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
   doc.setFont("helvetica", "italic");
   doc.setFontSize(11);
   doc.setTextColor(60);
+  const modelCount = Array.isArray(result.models) ? result.models.length : 0;
+  const mediaType = result.fileType || "media";
+  const summaryText =
+    modelCount > 1
+      ? `Combines confidence signals from ${modelCount} ${mediaType} models into a single verification confidence score.`
+      : `This confidence score is based on the available ${mediaType} model output for this scan.`;
   doc.text(
-    "Combines the fakeness scores from all image models into a single, more accurate confidence score.",
+    summaryText,
     margin,
     (y += 5),
     { maxWidth: 170 }

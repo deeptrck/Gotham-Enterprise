@@ -152,7 +152,7 @@ const getFileTypeFromUrl = (url: string) => {
   if (!ext) return "image";
 
   if (["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext)) return "image";
-  if (["mp4", "mov", "avi", "webm", "mkv"].includes(ext)) return "video";
+  if (["mp4", "mov", "avi", "mkv"].includes(ext)) return "video";
   if (["mp3", "wav", "ogg", "m4a"].includes(ext)) return "audio";
 
   return "image";
@@ -281,7 +281,7 @@ const getFileTypeFromUrl = (url: string) => {
     </p>
 
     <p className="text-xs text-slate-500 dark:text-slate-200 text-center">
-      Max file size: 300MB. Accepted formats: JPG, PNG, MP3, WAV, MP4, WebM, MOV, AVI, WMV, MKV, FLV
+      Max file size: 50MB (video). Accepted formats: JPG, JPEG, PNG, GIF, WEBP, BMP, MP3, WAV, OGG, M4A, AAC, FLAC, MP4, MOV, AVI, MKV
     </p>
   </CardContent>
 </Card>

@@ -26,6 +26,23 @@ type ResultsPage = {
   };
 };
 
+type ScanFallbackRow = {
+  scanId?: string;
+  _id?: string;
+  fileName?: string;
+  status?: string;
+  confidenceScore?: number;
+  createdAt?: string;
+  fileType?: string;
+};
+
+type ScansPayload =
+  | ScanFallbackRow[]
+  | {
+      scans?: ScanFallbackRow[];
+      degraded?: string;
+    };
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function inLastDays(createdAt: string, days: number) {
@@ -61,11 +78,12 @@ function Sparkline({ values }: { values: number[] }) {
     if (values.length === 0) return "";
     const max = Math.max(...values);
     const min = Math.min(...values);
+    const isFlat = max === min;
 
     return values
       .map((value, index) => {
         const x = (index / Math.max(values.length - 1, 1)) * 100;
-        const y = 100 - ((value - min) / Math.max(max - min, 1)) * 100;
+        const y = isFlat ? 50 : 100 - ((value - min) / Math.max(max - min, 1)) * 100;
         return `${x},${y}`;
       })
       .join(" ");
@@ -73,9 +91,13 @@ function Sparkline({ values }: { values: number[] }) {
 
   return (
     <div className="h-36 w-full rounded-lg border p-3">
-      <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
-        <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points} className="text-primary" />
-      </svg>
+      {values.length === 0 ? (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No trend data available</div>
+      ) : (
+        <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
+          <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points} className="text-primary" />
+        </svg>
+      )}
     </div>
   );
 }
@@ -130,6 +152,7 @@ export default function AdminDashboardClient() {
         const all: ScanRow[] = [];
         let page = 1;
         let pages = 1;
+        let degradedMessage: string | null = null;
 
         while (page <= pages) {
           const response = await fetch(`/api/results?page=${page}&limit=100`, {
@@ -139,17 +162,57 @@ export default function AdminDashboardClient() {
           });
 
           if (!response.ok) {
-            throw new Error("Failed to fetch admin telemetry");
+            degradedMessage = "Admin telemetry is partially unavailable. Showing available data.";
+            break;
           }
 
-          const payload = (await response.json()) as ResultsPage;
+          const payload = (await response.json()) as ResultsPage & { degraded?: string };
           all.push(...(payload.data || []));
+          if (payload.degraded) {
+            degradedMessage = payload.degraded;
+          }
           pages = payload.pagination?.pages || 1;
           page += 1;
         }
 
+        if (all.length === 0 || degradedMessage) {
+          const scansResponse = await fetch("/api/scans", {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+          });
+
+          if (scansResponse.ok) {
+            const scansPayload = (await scansResponse.json()) as ScansPayload;
+            const scanRows = Array.isArray(scansPayload)
+              ? scansPayload
+              : scansPayload.scans || [];
+
+            const normalized = scanRows.map((row) => ({
+              scanId: row.scanId || row._id || "unknown",
+              fileName: row.fileName || "unknown-file",
+              status: String(row.status || "PROCESSING").toUpperCase(),
+              confidenceScore: Number(row.confidenceScore || 0),
+              createdAt: row.createdAt || new Date().toISOString(),
+              fileType: row.fileType || "unknown",
+            }));
+
+            if (normalized.length > 0) {
+              all.splice(0, all.length, ...normalized);
+              degradedMessage = degradedMessage
+                ? `${degradedMessage} Fallback telemetry loaded from scans API.`
+                : "Telemetry loaded from scans API fallback.";
+            } else if (!Array.isArray(scansPayload) && scansPayload.degraded) {
+              degradedMessage = degradedMessage
+                ? `${degradedMessage} ${scansPayload.degraded}`
+                : scansPayload.degraded;
+            }
+          }
+        }
+
         if (!mounted) return;
         setResults(all);
+        setError(degradedMessage);
         setFetchMs(Math.round(performance.now() - started));
       } catch (err) {
         if (!mounted) return;
@@ -302,10 +365,6 @@ export default function AdminDashboardClient() {
     return <LoadingSpinner fullScreen message="Loading admin telemetry..." />;
   }
 
-  if (error) {
-    return <div className="min-h-screen flex items-center justify-center text-red-500">{error}</div>;
-  }
-
   const executiveKpis = [
     { label: "Total Media Scanned (24h)", value: String(data.last24), delta: `${data.last7} / 7d` },
     { label: "Total Media Scanned (30d)", value: String(data.last30), delta: `${data.total} all-time` },
@@ -321,6 +380,12 @@ export default function AdminDashboardClient() {
   return (
     <div className="min-h-screen bg-background px-6 py-6">
       <div className="mx-auto max-w-7xl space-y-6">
+        {error && (
+          <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+            {error}
+          </div>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Gotham Enterprise Admin Dashboard</CardTitle>

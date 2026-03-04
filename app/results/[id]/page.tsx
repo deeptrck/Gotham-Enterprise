@@ -42,6 +42,7 @@ type ResultData = {
   realityDefenderSummary?: {
     status?: string;
     score?: number;
+    error?: string;
   } | null;
   feedbackSummary?: {
     falsePositive: number;
@@ -87,6 +88,7 @@ type ParsedDescription = {
     realityDefender?: {
       status?: string;
       score?: number;
+      error?: string;
     };
     fusion?: {
       score?: number;
@@ -133,7 +135,7 @@ useEffect(() => {
         status: data.status,
         confidenceScore: data.confidenceScore,
         createdAt: data.createdAt,
-        imageUrl: data.imageUrl || "https://via.placeholder.com/260x180.png?text=Image",
+        imageUrl: data.imageUrl || "/file.svg",
         description: data.description,
         modelsUsed: data.modelsUsed || [],
         rdModels,
@@ -298,6 +300,11 @@ useEffect(() => {
                   <p>
                     Score: {typeof resultData.realityDefenderSummary?.score === "number" ? `${(resultData.realityDefenderSummary.score * 100).toFixed(1)}%` : "N/A"}
                   </p>
+                  {resultData.realityDefenderSummary?.error && (
+                    <p className="text-xs mt-1 text-red-600 dark:text-red-400">
+                      Reason: {resultData.realityDefenderSummary.error}
+                    </p>
+                  )}
                 </div>
               </div>
             </>

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function Header() {
-  const { user, isSignedIn } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
   const { signOut } = useClerk();
   const [canAccessAdmin, setCanAccessAdmin] = useState(false);
 
@@ -130,7 +130,14 @@ export default function Header() {
           Pricing &amp; Billing
         </Link>
 
-        {isSignedIn ? (
+        {!isLoaded ? (
+          <Button
+            variant="ghost"
+            className="text-sm text-gray-700 dark:text-gray-300 hover:text-blue-500"
+          >
+            Account
+          </Button>
+        ) : isSignedIn ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center">
@@ -189,60 +196,66 @@ export default function Header() {
       {/* Mobile menu (hamburger) */}
       <div className="flex md:hidden items-center gap-2">
         {/* <ThemeToggle /> */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <Menu className="h-6 w-6 text-gray-700 dark:text-gray-300" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-black border border-gray-200 dark:border-gray-800">
-            <DropdownMenuItem asChild>
-              <Link href="/" className="text-gray-800 dark:text-gray-200">Home</Link>
-            </DropdownMenuItem>
-            {isSignedIn && (
-              <>
-                <DropdownMenuItem asChild>
-                  <Link href="/dashboard" className="text-gray-800 dark:text-gray-200">Dashboard</Link>
-                </DropdownMenuItem>
-                {canAccessAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/admin/dashboard" className="text-gray-800 dark:text-gray-200">Admin</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link href="/results" className="text-gray-800 dark:text-gray-200">Results</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/history" className="text-gray-800 dark:text-gray-200">History</Link>
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuItem asChild>
-              <Link href="/pricing-billing" className="text-gray-800 dark:text-gray-200">Pricing &amp; Billing</Link>
-            </DropdownMenuItem>
-            {isSignedIn ? (
-              <DropdownMenuItem
-                onClick={() => signOut()}
-                className="cursor-pointer hover:bg-red-100 dark:hover:bg-gray-900 text-red-600 dark:text-red-400"
-              >
-                <LogOut className="h-4 w-4 mr-2" /> Logout
+        {!isLoaded ? (
+          <Button variant="ghost" size="icon" aria-label="Open menu">
+            <Menu className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+          </Button>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-black border border-gray-200 dark:border-gray-800">
+              <DropdownMenuItem asChild>
+                <Link href="/" className="text-gray-800 dark:text-gray-200">Home</Link>
               </DropdownMenuItem>
-            ) : (
-              <>
-                <DropdownMenuItem asChild>
-                  <Link href="/login" className="text-gray-800 dark:text-gray-200">
-                    <LogIn className="h-4 w-4 mr-2" /> Log In
-                  </Link>
+              {isSignedIn && (
+                <>
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard" className="text-gray-800 dark:text-gray-200">Dashboard</Link>
+                  </DropdownMenuItem>
+                  {canAccessAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin/dashboard" className="text-gray-800 dark:text-gray-200">Admin</Link>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem asChild>
+                    <Link href="/results" className="text-gray-800 dark:text-gray-200">Results</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/history" className="text-gray-800 dark:text-gray-200">History</Link>
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuItem asChild>
+                <Link href="/pricing-billing" className="text-gray-800 dark:text-gray-200">Pricing &amp; Billing</Link>
+              </DropdownMenuItem>
+              {isSignedIn ? (
+                <DropdownMenuItem
+                  onClick={() => signOut()}
+                  className="cursor-pointer hover:bg-red-100 dark:hover:bg-gray-900 text-red-600 dark:text-red-400"
+                >
+                  <LogOut className="h-4 w-4 mr-2" /> Logout
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/signup" className="text-gray-800 dark:text-gray-200">
-                    <UserPlus className="h-4 w-4 mr-2" /> Sign Up
-                  </Link>
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              ) : (
+                <>
+                  <DropdownMenuItem asChild>
+                    <Link href="/login" className="text-gray-800 dark:text-gray-200">
+                      <LogIn className="h-4 w-4 mr-2" /> Log In
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/signup" className="text-gray-800 dark:text-gray-200">
+                      <UserPlus className="h-4 w-4 mr-2" /> Sign Up
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </header>
   );
