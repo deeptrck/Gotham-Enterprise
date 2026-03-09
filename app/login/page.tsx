@@ -37,7 +37,7 @@ export default function Login() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.push("/"); // Redirect after login
+        window.location.href = "/"; // Force full reload to ensure auth state updates
         return;
       }
 
