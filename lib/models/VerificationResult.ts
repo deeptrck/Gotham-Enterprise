@@ -13,6 +13,24 @@ export interface IVerificationResult extends Document {
   url?: string;    
   description?: string;
   features?: string[];
+  fcAnalysis?: {
+    label?: string;
+    confidence?: number;
+    fake_prob?: number;
+    analyzedAt: string;
+  };
+  rdAnalysis?: {
+    requestId?: string;
+    status: string;
+    score: number;
+    models: Array<{
+      name: string;
+      status: string;
+      score: number;
+    }>;
+    analyzedAt: string;
+    error?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,7 +49,24 @@ const verificationResultSchema = new Schema<IVerificationResult>(
     url: { type: String },
     description: { type: String },
     features: [{ type: String }],
-
+    fcAnalysis: {
+      label: { type: String },
+      confidence: { type: Number },
+      fake_prob: { type: Number },
+      analyzedAt: { type: String },
+    },
+    rdAnalysis: {
+      requestId: { type: String },
+      status: { type: String, required: true },
+      score: { type: Number, required: true },
+      models: [{
+        name: { type: String },
+        status: { type: String },
+        score: { type: Number },
+      }],
+      analyzedAt: { type: String, required: true },
+      error: { type: String },
+    },
   },
   { timestamps: true }
 );

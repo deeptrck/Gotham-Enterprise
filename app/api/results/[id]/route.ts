@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getJobFeedbackSummary, getJobMeta, getJobRdAnalysis, getUserJobFeedback, getJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
+import { connectToDatabase } from "@/lib/db";
+import { VerificationResult } from "@/lib/models/VerificationResult";
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -80,9 +82,21 @@ function mapBackendFetchError(error: unknown) {
   };
 }
 
-function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "video" | "audio", createdAt: string) {
-  const rd = getJobRdAnalysis(id);
-  const fc = getJobFakeCatcherAnalysis(id);
+function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "video" | "audio", createdAt: string, mongoDoc?: any) {
+  const rd = getJobRdAnalysis(id) || (mongoDoc?.rdAnalysis ? {
+    requestId: mongoDoc.rdAnalysis.requestId,
+    status: mongoDoc.rdAnalysis.status,
+    score: mongoDoc.rdAnalysis.score,
+    models: mongoDoc.rdAnalysis.models,
+    analyzedAt: mongoDoc.rdAnalysis.analyzedAt,
+    error: mongoDoc.rdAnalysis.error,
+  } : undefined);
+  const fc = getJobFakeCatcherAnalysis(id) || (mongoDoc?.fcAnalysis ? {
+    label: mongoDoc.fcAnalysis.label,
+    confidence: mongoDoc.fcAnalysis.confidence,
+    fake_prob: mongoDoc.fcAnalysis.fake_prob,
+    analyzedAt: mongoDoc.fcAnalysis.analyzedAt,
+  } : undefined);
   
   const rdUsable = Boolean(rd && rd.status !== "ERROR" && rd.status !== "DISABLED");
   const fcUsable = Boolean(fc && fc.label && fc.label !== "UNCERTAIN");
@@ -112,7 +126,7 @@ function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "v
 
   const allModels = [
     ...(fc ? [{ name: "fakecatcher-rppg", status: fc.label || "UNKNOWN", score: clamp01(fc.confidence ? fc.confidence / 100 : 0) }] : []),
-    ...(rd?.models || []).map((m) => ({
+    ...(rd?.models || []).map((m: any) => ({
       name: m.name || "rd-model",
       status: mapRdModelStatus(m.status),
       score: clamp01(m.score),
@@ -183,11 +197,21 @@ export async function GET(
     const isCachedScan = meta?.source === "rd-only" || meta?.source === "fakecatcher" || id.startsWith("rd-") || id.startsWith("fc-img-");
 
     if (isCachedScan) {
+      // Try to get from MongoDB for persistent analysis data
+      let mongoDoc;
+      try {
+        await connectToDatabase();
+        mongoDoc = await VerificationResult.findOne({ scanId: id, userId });
+      } catch (dbError) {
+        console.warn("Failed to fetch from MongoDB:", dbError);
+      }
+
       const responsePayload = buildRdOnlyPayload(
         id,
-        meta?.fileName || `media-${id}`,
-        meta?.fileType || "image",
-        meta?.createdAt || new Date().toISOString()
+        meta?.fileName || mongoDoc?.fileName || `media-${id}`,
+        meta?.fileType || mongoDoc?.fileType || "image",
+        meta?.createdAt || mongoDoc?.createdAt?.toISOString() || new Date().toISOString(),
+        mongoDoc
       );
       const feedbackSummary = getJobFeedbackSummary(id);
       const userFeedback = getUserJobFeedback(id, userId);

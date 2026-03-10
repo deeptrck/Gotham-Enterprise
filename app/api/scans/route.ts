@@ -541,6 +541,20 @@ export async function POST(req: NextRequest) {
           confidenceScore: finalConfidence,
           modelsUsed: ["FakeCatcher", ...(rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED" ? ["RealityDefender"] : [])],
           imageUrl: imageData || "",
+          fcAnalysis: fcOutcome ? {
+            label: fcOutcome.label,
+            confidence: fcOutcome.confidence,
+            fake_prob: fcOutcome.fake_prob,
+            analyzedAt: new Date().toISOString(),
+          } : undefined,
+          rdAnalysis: rdOutcome ? {
+            requestId: rdOutcome.requestId,
+            status: rdOutcome.status,
+            score: rdOutcome.score,
+            models: rdOutcome.models,
+            analyzedAt: new Date().toISOString(),
+            error: rdOutcome.error,
+          } : undefined,
           createdAt: new Date(),
         });
       } catch (dbError) {
@@ -613,6 +627,14 @@ export async function POST(req: NextRequest) {
               status: rdStatus as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
               confidenceScore: rdConfidence,
               modelsUsed: ["RealityDefender"],
+              rdAnalysis: rdOutcome ? {
+                requestId: rdOutcome.requestId,
+                status: rdOutcome.status,
+                score: rdOutcome.score,
+                models: rdOutcome.models,
+                analyzedAt: new Date().toISOString(),
+                error: rdOutcome.error,
+              } : undefined,
               createdAt: new Date(),
             });
           } catch (dbError) {
