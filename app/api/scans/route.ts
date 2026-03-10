@@ -223,20 +223,12 @@ export async function GET(req: NextRequest) {
       });
 
       if (!response.ok) {
-        degraded = `Backend /jobs returned ${response.status}; showing available cached RD-only scans.`;
+        // Backend unavailable, but we have cached RD-only scans - no need for error message
       } else {
         jobsPayload = await response.json() as { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> };
       }
     } catch (error) {
-      const err = error as { message?: string; cause?: { code?: string } };
-      const timeoutLike =
-        err.cause?.code === "UND_ERR_HEADERS_TIMEOUT" ||
-        err.cause?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-        err.cause?.code === "ABORT_ERR";
-
-      degraded = timeoutLike
-        ? `Backend request timed out; showing available cached RD-only scans.`
-        : `Failed to reach backend; showing available cached RD-only scans.`;
+      // Backend unavailable, but we have cached RD-only scans - continue without error message
     }
 
     const jobs = jobsPayload.jobs || {};

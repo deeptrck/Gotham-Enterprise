@@ -238,15 +238,27 @@ useEffect(() => {
         <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-neutral-800 flex flex-col md:flex-row gap-10">
           {/* Image */}
           <div className="w-full md:w-[300px]">
-            <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800">
-              <Image
-                src={resultData.imageUrl}
-                alt={resultData.fileName}
-                width={300}
-                height={260}
-                className="object-cover"
-              />
-            </div>
+            {resultData.fileType === "image" && resultData.imageUrl ? (
+              <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800">
+                <Image
+                  src={resultData.imageUrl}
+                  alt={resultData.fileName}
+                  width={300}
+                  height={260}
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800 bg-gray-100 dark:bg-gray-800 flex items-center justify-center h-[260px]">
+                <div className="text-center text-gray-500 dark:text-gray-400">
+                  <div className="text-4xl mb-2">
+                    {resultData.fileType === "video" ? "🎥" : resultData.fileType === "audio" ? "🎵" : "📄"}
+                  </div>
+                  <p className="text-sm">No preview available</p>
+                  <p className="text-xs mt-1">{resultData.fileType?.toUpperCase()}</p>
+                </div>
+              </div>
+            )}
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
               Uploaded: {resultData.fileName}
             </p>

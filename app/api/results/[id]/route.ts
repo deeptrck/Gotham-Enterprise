@@ -93,17 +93,17 @@ function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "v
 
   if (fcUsable && rdUsable) {
     // Both FC and RD available - average them
-    const fcScore = fc.label === "FAKE" ? (fc.fake_prob || 0.5) : fc.label === "REAL" ? 1 - (fc.fake_prob || 0.5) : 0.5;
-    const rdScore = mapRdToManipulationScore(rd.status, rd.score);
+    const fcScore = fc!.label === "FAKE" ? (fc!.fake_prob || 0.5) : fc!.label === "REAL" ? 1 - (fc!.fake_prob || 0.5) : 0.5;
+    const rdScore = mapRdToManipulationScore(rd!.status, rd!.score);
     combinedScore = (fcScore + rdScore) / 2;
     weights = { fakecatcher: 0.5, realityDefender: 0.5 };
   } else if (fcUsable) {
     // Only FC available
-    combinedScore = fc.label === "FAKE" ? (fc.fake_prob || 0.5) : fc.label === "REAL" ? 1 - (fc.fake_prob || 0.5) : 0.5;
+    combinedScore = fc!.label === "FAKE" ? (fc!.fake_prob || 0.5) : fc!.label === "REAL" ? 1 - (fc!.fake_prob || 0.5) : 0.5;
     weights = { fakecatcher: 1, realityDefender: 0 };
   } else if (rdUsable) {
     // Only RD available
-    combinedScore = mapRdToManipulationScore(rd.status, rd.score);
+    combinedScore = mapRdToManipulationScore(rd!.status, rd!.score);
     weights = { fakecatcher: 0, realityDefender: 1 };
   }
 

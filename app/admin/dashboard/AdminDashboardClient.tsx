@@ -175,7 +175,7 @@ export default function AdminDashboardClient() {
           }));
 
           all.push(...normalized.slice(0, 100)); // Limit to 100 for performance
-          if (scansPayload.degraded) {
+          if (!Array.isArray(scansPayload) && scansPayload.degraded) {
             degradedMessage = scansPayload.degraded;
           }
         } else {
