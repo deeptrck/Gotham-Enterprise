@@ -4,6 +4,7 @@ type JobMeta = {
   fileType: "image" | "video" | "audio";
   source?: "fakecatcher" | "rd-only";
   createdAt: string;
+  imageData?: string;
 };
 
 export type RdModel = {
@@ -21,6 +22,13 @@ export type RdAnalysis = {
   error?: string;
 };
 
+export type FcAnalysis = {
+  label?: "REAL" | "FAKE" | "UNCERTAIN" | string;
+  confidence?: number;
+  fake_prob?: number;
+  analyzedAt: string;
+};
+
 export type FeedbackLabel = "FALSE_POSITIVE" | "FALSE_NEGATIVE";
 
 type FeedbackEntry = {
@@ -32,7 +40,7 @@ type FeedbackEntry = {
 
 const jobMetaStore = new Map<string, JobMeta>();
 const jobFeedbackStore = new Map<string, FeedbackEntry[]>();
-const jobAnalysisStore = new Map<string, { rd?: RdAnalysis }>();
+const jobAnalysisStore = new Map<string, { rd?: RdAnalysis; fc?: FcAnalysis }>();
 
 export function setJobMeta(jobId: string, meta: JobMeta) {
   jobMetaStore.set(jobId, meta);
@@ -95,4 +103,16 @@ export function setJobRdAnalysis(jobId: string, analysis: RdAnalysis) {
 
 export function getJobRdAnalysis(jobId: string) {
   return jobAnalysisStore.get(jobId)?.rd;
+}
+
+export function setJobFakeCatcherAnalysis(jobId: string, analysis: FcAnalysis) {
+  const existing = jobAnalysisStore.get(jobId) || {};
+  jobAnalysisStore.set(jobId, {
+    ...existing,
+    fc: analysis,
+  });
+}
+
+export function getJobFakeCatcherAnalysis(jobId: string) {
+  return jobAnalysisStore.get(jobId)?.fc;
 }

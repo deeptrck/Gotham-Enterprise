@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchAllResults } from "@/lib/api";
@@ -134,11 +133,10 @@ export default function ResultsClient() {
                 >
                   <div className="relative w-full h-48 bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
                     {result.imageUrl ? (
-                      <Image
+                      <img
                         src={result.imageUrl}
                         alt={result.fileName}
-                        fill
-                        className="object-cover hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.src = "https://via.placeholder.com/300x200?text=Image";

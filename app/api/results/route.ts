@@ -63,51 +63,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get("limit") || "20", 10)));
 
-    let payload: {
-      jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }>;
-    } = { jobs: {} };
-    let degraded: string | null = null;
-
-    try {
-      const response = await fetch(buildBackendUrl("/jobs"), {
-        method: "GET",
-        cache: "no-store",
-        signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
-      });
-
-      if (!response.ok) {
-        degraded = `Backend /jobs returned ${response.status}; showing available cached RD-only results.`;
-      } else {
-        payload = (await response.json()) as {
-          jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }>;
-        };
-      }
-    } catch (error) {
-      degraded = `${mapBackendFetchError(error)}; showing available cached RD-only results.`;
-    }
-
-    const backendEntries = Object.entries(payload.jobs || {}).map(([jobId, job]) => {
-      const meta = getJobMeta(jobId);
-      return {
-        _id: jobId,
-        scanId: jobId,
-        fileName: meta?.fileName || job.filename || `video-${jobId}`,
-        status: mapJobStatus(job.status),
-        confidenceScore: 0,
-        createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
-        fileType: "video",
-        imageUrl: "",
-        description: JSON.stringify({ rd: { source: "fakecatcher", jobStatus: job.status } }),
-        modelsUsed: ["fakecatcher-rppg"],
-        features: [
-          `job_status:${job.status || "queued"}`,
-        ],
-      };
-    }).filter((row) => {
-      const meta = getJobMeta(row.scanId);
-      return !meta || meta.userId === userId;
-    });
-
+    // Skip backend call for faster loading, use only cached RD-only results
     const rdOnlyEntries = listUserJobMeta(userId)
       .filter((meta) => meta.source === "rd-only")
       .map((meta) => {
@@ -125,7 +81,7 @@ export async function GET(req: NextRequest) {
           confidenceScore: confidence,
           createdAt: meta.createdAt,
           fileType: meta.fileType,
-          imageUrl: "",
+          imageUrl: meta.imageData || "",
           description: JSON.stringify({
             rd: {
               source: "reality-defender",
@@ -140,7 +96,7 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    const entries = [...backendEntries, ...rdOnlyEntries];
+    const entries = rdOnlyEntries;
 
     entries.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
@@ -153,7 +109,6 @@ export async function GET(req: NextRequest) {
       {
         success: true,
         data,
-        ...(degraded ? { degraded } : {}),
         pagination: {
           page,
           limit,
@@ -171,7 +126,6 @@ export async function GET(req: NextRequest) {
       {
         success: true,
         data: [],
-        degraded: `${mapBackendFetchError(error)}; no telemetry available right now.`,
         pagination: {
           page: 1,
           limit: 20,

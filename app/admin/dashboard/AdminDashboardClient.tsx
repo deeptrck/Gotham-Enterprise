@@ -150,64 +150,36 @@ export default function AdminDashboardClient() {
         const started = performance.now();
 
         const all: ScanRow[] = [];
-        let page = 1;
-        let pages = 1;
         let degradedMessage: string | null = null;
 
-        while (page <= pages) {
-          const response = await fetch(`/api/results?page=${page}&limit=100`, {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          });
+        // Directly fetch from /api/scans to avoid slow /jobs fallback
+        const scansResponse = await fetch("/api/scans", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
 
-          if (!response.ok) {
-            degradedMessage = "Admin telemetry is partially unavailable. Showing available data.";
-            break;
+        if (scansResponse.ok) {
+          const scansPayload = (await scansResponse.json()) as ScansPayload;
+          const scanRows = Array.isArray(scansPayload)
+            ? scansPayload
+            : scansPayload.scans || [];
+
+          const normalized = scanRows.map((row) => ({
+            scanId: row.scanId || row._id || "unknown",
+            fileName: row.fileName || "unknown-file",
+            status: String(row.status || "PROCESSING").toUpperCase(),
+            confidenceScore: Number(row.confidenceScore || 0),
+            createdAt: row.createdAt || new Date().toISOString(),
+            fileType: row.fileType || "unknown",
+          }));
+
+          all.push(...normalized.slice(0, 100)); // Limit to 100 for performance
+          if (scansPayload.degraded) {
+            degradedMessage = scansPayload.degraded;
           }
-
-          const payload = (await response.json()) as ResultsPage & { degraded?: string };
-          all.push(...(payload.data || []));
-          if (payload.degraded) {
-            degradedMessage = payload.degraded;
-          }
-          pages = payload.pagination?.pages || 1;
-          page += 1;
-        }
-
-        if (all.length === 0 || degradedMessage) {
-          const scansResponse = await fetch("/api/scans", {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          });
-
-          if (scansResponse.ok) {
-            const scansPayload = (await scansResponse.json()) as ScansPayload;
-            const scanRows = Array.isArray(scansPayload)
-              ? scansPayload
-              : scansPayload.scans || [];
-
-            const normalized = scanRows.map((row) => ({
-              scanId: row.scanId || row._id || "unknown",
-              fileName: row.fileName || "unknown-file",
-              status: String(row.status || "PROCESSING").toUpperCase(),
-              confidenceScore: Number(row.confidenceScore || 0),
-              createdAt: row.createdAt || new Date().toISOString(),
-              fileType: row.fileType || "unknown",
-            }));
-
-            if (normalized.length > 0) {
-              all.splice(0, all.length, ...normalized);
-              degradedMessage = degradedMessage
-                ? `${degradedMessage} Fallback telemetry loaded from scans API.`
-                : "Telemetry loaded from scans API fallback.";
-            } else if (!Array.isArray(scansPayload) && scansPayload.degraded) {
-              degradedMessage = degradedMessage
-                ? `${degradedMessage} ${scansPayload.degraded}`
-                : scansPayload.degraded;
-            }
-          }
+        } else {
+          degradedMessage = "Failed to load telemetry data.";
         }
 
         if (!mounted) return;

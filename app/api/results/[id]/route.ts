@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getJobFeedbackSummary, getJobMeta, getJobRdAnalysis, getUserJobFeedback } from "@/lib/fakecatcherStore";
+import { getJobFeedbackSummary, getJobMeta, getJobRdAnalysis, getUserJobFeedback, getJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -82,33 +82,62 @@ function mapBackendFetchError(error: unknown) {
 
 function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "video" | "audio", createdAt: string) {
   const rd = getJobRdAnalysis(id);
-  const rdUsable = Boolean(
-    rd &&
-    rd.status !== "ERROR" &&
-    rd.status !== "DISABLED"
-  );
+  const fc = getJobFakeCatcherAnalysis(id);
+  
+  const rdUsable = Boolean(rd && rd.status !== "ERROR" && rd.status !== "DISABLED");
+  const fcUsable = Boolean(fc && fc.label && fc.label !== "UNCERTAIN");
 
-  const rdScore = rdUsable && rd ? mapRdToManipulationScore(rd.status, rd.score) : 0.5;
-  const combinedScore = clamp01(rdScore);
-  const combinedStatus = mapCombinedStatus(combinedScore);
+  let combinedScore = 0.5;
+  let combinedStatus = "SUSPICIOUS";
+  let weights = { fakecatcher: 0, realityDefender: 1 };
 
-  const allModels = (rd?.models || []).map((m) => ({
-    name: m.name || "rd-model",
-    status: mapRdModelStatus(m.status),
-    score: clamp01(m.score),
-  }));
+  if (fcUsable && rdUsable) {
+    // Both FC and RD available - average them
+    const fcScore = fc.label === "FAKE" ? (fc.fake_prob || 0.5) : fc.label === "REAL" ? 1 - (fc.fake_prob || 0.5) : 0.5;
+    const rdScore = mapRdToManipulationScore(rd.status, rd.score);
+    combinedScore = (fcScore + rdScore) / 2;
+    weights = { fakecatcher: 0.5, realityDefender: 0.5 };
+  } else if (fcUsable) {
+    // Only FC available
+    combinedScore = fc.label === "FAKE" ? (fc.fake_prob || 0.5) : fc.label === "REAL" ? 1 - (fc.fake_prob || 0.5) : 0.5;
+    weights = { fakecatcher: 1, realityDefender: 0 };
+  } else if (rdUsable) {
+    // Only RD available
+    combinedScore = mapRdToManipulationScore(rd.status, rd.score);
+    weights = { fakecatcher: 0, realityDefender: 1 };
+  }
+
+  combinedScore = clamp01(combinedScore);
+  combinedStatus = mapCombinedStatus(combinedScore);
+
+  const allModels = [
+    ...(fc ? [{ name: "fakecatcher-rppg", status: fc.label || "UNKNOWN", score: clamp01(fc.confidence ? fc.confidence / 100 : 0) }] : []),
+    ...(rd?.models || []).map((m) => ({
+      name: m.name || "rd-model",
+      status: mapRdModelStatus(m.status),
+      score: clamp01(m.score),
+    })),
+  ];
 
   const description = JSON.stringify({
     rd: {
-      source: "reality-defender",
+      source: (fcUsable && rdUsable) ? "fusion" : rdUsable ? "reality-defender" : "fakecatcher",
       jobStatus: "done",
       models: allModels,
-      fakecatcher: null,
-      realityDefender: rd || null,
+      fakecatcher: fc ? {
+        label: fc.label,
+        confidence: fc.confidence,
+        fake_prob: fc.fake_prob,
+      } : null,
+      realityDefender: rd ? {
+        status: rd.status,
+        score: rd.score,
+        models: rd.models,
+      } : null,
       fusion: {
         score: combinedScore,
         status: combinedStatus,
-        weights: { fakecatcher: 0, realityDefender: 1 },
+        weights,
       },
     },
   });
@@ -120,14 +149,16 @@ function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "v
     status: combinedStatus,
     confidenceScore: Math.round(combinedScore * 1000) / 10,
     createdAt,
-    imageUrl: "",
+    imageUrl: getJobMeta(id)?.imageData || "",
     modelsUsed: allModels.map((m) => m.name),
     description,
     features: [
-      "source:reality-defender",
-      rd ? `rd_status:${rd.status}` : "rd_status:unavailable",
+      fcUsable ? "source:fakecatcher" : "",
+      rdUsable ? "source:reality-defender" : "",
       `fusion_score:${combinedScore.toFixed(4)}`,
-    ],
+      `fc_weight:${weights.fakecatcher}`,
+      `rd_weight:${weights.realityDefender}`,
+    ].filter(Boolean),
   };
 }
 
@@ -148,9 +179,10 @@ export async function GET(
       return NextResponse.json({ error: "Result not found" }, { status: 404 });
     }
 
-    const shouldUseRdOnly = meta?.source === "rd-only" || id.startsWith("rd-");
+    // Check if this is a cached scan (either RD-only or FakeCatcher image)
+    const isCachedScan = meta?.source === "rd-only" || meta?.source === "fakecatcher" || id.startsWith("rd-") || id.startsWith("fc-img-");
 
-    if (shouldUseRdOnly) {
+    if (isCachedScan) {
       const responsePayload = buildRdOnlyPayload(
         id,
         meta?.fileName || `media-${id}`,
@@ -172,17 +204,27 @@ export async function GET(
 
     let response: Response;
     try {
-      response = await fetch(buildBackendUrl(`/jobs/${id}`), {
+      response = await fetch(buildBackendUrl(`/v1/video/jobs/${id}`), {
         method: "GET",
         cache: "no-store",
         signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
       const mapped = mapBackendFetchError(error);
-      return NextResponse.json({ error: mapped.message }, { status: mapped.status });
+      // If backend is unreachable and we don't have cached data, return error
+      if (!meta) {
+        return NextResponse.json({ error: mapped.message }, { status: mapped.status });
+      }
+      // If we have cached metadata, return error
+      return NextResponse.json({ error: "Failed to fetch result" }, { status: 500 });
     }
 
     if (!response.ok) {
+      // If result not found on backend and not in cache, return 404
+      if (response.status === 404 && !meta) {
+        return NextResponse.json({ error: "Result not found" }, { status: 404 });
+      }
+      
       const payload = await response.text();
       return new NextResponse(payload, {
         status: response.status,

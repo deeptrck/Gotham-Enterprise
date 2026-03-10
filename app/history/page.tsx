@@ -42,7 +42,8 @@ export default function HistoryPage() {
         setLoading(true);
         const data = await fetchScans();
         type ApiScan = { _id: string; scanId: string; fileName: string; createdAt: string; status: string };
-        const formattedScans: ScanRecord[] = (data as ApiScan[]).map((scan) => ({
+        const scansArray = Array.isArray(data) ? data : data.scans || [];
+        const formattedScans: ScanRecord[] = scansArray.map((scan: ApiScan) => ({
           _id: scan._id,
           scanId: scan.scanId,
           fileName: scan.fileName,

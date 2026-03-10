@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getJobMeta, getJobRdAnalysis, listUserJobMeta, setJobMeta, setJobRdAnalysis } from "@/lib/fakecatcherStore";
+import { getJobMeta, getJobRdAnalysis, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobRdAnalysis, setJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
 import { verifyMedia } from "@/lib/realityDefender";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
+import { VerificationResult } from "@/lib/models/VerificationResult";
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -120,7 +121,7 @@ async function postVideoWithRetry(payload: FormData, attempts = 2) {
     let response: Response;
 
     try {
-      response = await fetch(buildBackendUrl("/predict/video"), {
+      response = await fetch(buildBackendUrl("/v1/video/predict/video"), {
         method: "POST",
         body: payload,
         cache: "no-store",
@@ -136,8 +137,8 @@ async function postVideoWithRetry(payload: FormData, attempts = 2) {
 
       lastStatus = timeoutLike ? 504 : 502;
       lastBody = timeoutLike
-        ? `Backend request timed out after ${Math.round(BACKEND_REQUEST_TIMEOUT_MS / 1000)}s while calling ${buildBackendUrl("/predict/video")}.`
-        : `Failed to reach backend ${buildBackendUrl("/predict/video")}: ${err.message || "network error"}`;
+        ? `Backend request timed out after ${Math.round(BACKEND_REQUEST_TIMEOUT_MS / 1000)}s while calling ${buildBackendUrl("/v1/video/predict/video")}.`
+        : `Failed to reach backend ${buildBackendUrl("/v1/video/predict/video")}: ${err.message || "network error"}`;
       lastContentType = "application/json";
 
       if (i < attempts - 1) {
@@ -170,6 +171,29 @@ async function postVideoWithRetry(payload: FormData, attempts = 2) {
   return { ok: false as const, status: lastStatus, body: lastBody, contentType: lastContentType };
 }
 
+async function postImageToFakeCatcher(payload: FormData) {
+  try {
+    const response = await fetch(buildBackendUrl("/v1/image/predict"), {
+      method: "POST",
+      body: payload,
+      cache: "no-store",
+      signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
+    });
+
+    const responseBody = await response.text();
+    const contentType = response.headers.get("content-type") || "application/json";
+
+    if (response.ok) {
+      return { ok: true as const, body: responseBody, contentType };
+    }
+
+    return { ok: false as const, body: responseBody, contentType };
+  } catch (error) {
+    const err = error as { message?: string; cause?: { code?: string } };
+    return { ok: false as const, body: err.message || "Image prediction failed", contentType: "application/json" };
+  }
+}
+
 function getForwardHeaders(req: NextRequest) {
   const contentType = req.headers.get("content-type");
   const authorization = req.headers.get("authorization");
@@ -195,7 +219,7 @@ export async function GET(req: NextRequest) {
         method: "GET",
         headers: getForwardHeaders(req),
         cache: "no-store",
-        signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(5000), // Short timeout for fast loading
       });
 
       if (!response.ok) {
@@ -211,8 +235,8 @@ export async function GET(req: NextRequest) {
         err.cause?.code === "ABORT_ERR";
 
       degraded = timeoutLike
-        ? `Backend request timed out after ${Math.round(BACKEND_REQUEST_TIMEOUT_MS / 1000)}s; showing available cached RD-only scans.`
-        : `Failed to reach backend: ${err.message || "network error"}; showing available cached RD-only scans.`;
+        ? `Backend request timed out; showing available cached RD-only scans.`
+        : `Failed to reach backend; showing available cached RD-only scans.`;
     }
 
     const jobs = jobsPayload.jobs || {};
@@ -233,7 +257,7 @@ export async function GET(req: NextRequest) {
         status: mappedStatus,
         confidenceScore: 0,
         createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
-        imageUrl: "",
+        imageUrl: meta?.imageData || "",
       };
     }).filter((item) => {
       const meta = getJobMeta(item.scanId);
@@ -241,19 +265,33 @@ export async function GET(req: NextRequest) {
     });
 
     const rdOnlyScans = listUserJobMeta(userId)
-      .filter((meta) => meta.source === "rd-only")
+      .filter((meta) => meta.source === "rd-only" || meta.source === "fakecatcher")
       .map((meta) => {
         const rd = getJobRdAnalysis(meta.jobId);
-        const manipulationScore = mapRdToManipulationScore(rd?.status, rd?.score);
+        const fc = (meta.source === "fakecatcher") ? getJobFakeCatcherAnalysis(meta.jobId) : undefined;
+        
+        // Calculate final status: if FakeCatcher present, use it; otherwise use RD
+        let status = "SUSPICIOUS";
+        let confidenceScore = 50;
+        
+        if (fc?.label) {
+          status = fc.label === "FAKE" ? "DEEPFAKE" : fc.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS";
+          confidenceScore = fc.confidence ? Math.round(fc.confidence * 10) / 10 : 50;
+        } else if (rd) {
+          const manipulationScore = mapRdToManipulationScore(rd?.status, rd?.score);
+          status = mapCombinedStatus(manipulationScore);
+          confidenceScore = Math.round(clamp01(manipulationScore) * 1000) / 10;
+        }
+        
         return {
           _id: meta.jobId,
           scanId: meta.jobId,
           fileName: meta.fileName,
           fileType: meta.fileType,
-          status: mapCombinedStatus(manipulationScore),
-          confidenceScore: Math.round(clamp01(manipulationScore) * 1000) / 10,
+          status,
+          confidenceScore,
           createdAt: meta.createdAt,
-          imageUrl: "",
+          imageUrl: meta.imageData || "",
         };
       });
 
@@ -281,6 +319,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   let chargedUserId: string | null = null;
+  let imageData: string | undefined;
   try {
     const { userId } = await auth();
     if (!userId) {
@@ -318,6 +357,7 @@ export async function POST(req: NextRequest) {
         }
 
         fileName = body.fileName || fileName;
+        imageData = body.base64;
         requestedFileType = requestedFileType || inferFileType(fileName);
         const mimeType = requestedFileType === "video"
           ? "video/mp4"
@@ -443,6 +483,102 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let fcOutcome: { label?: string; confidence?: number; fake_prob?: number } | undefined;
+
+    if (fileType === "image" && uploadedFile) {
+      const payload = new FormData();
+      payload.append("file", uploadedFile);
+
+      const imageResult = await postImageToFakeCatcher(payload);
+      if (imageResult.ok) {
+        try {
+          const parsed = JSON.parse(imageResult.body) as {
+            prediction?: string;
+            confidence_percentage?: number;
+            raw_scores?: { Real?: number; Fake?: number };
+          };
+          fcOutcome = {
+            label: parsed.prediction === "Fake" ? "FAKE" : parsed.prediction === "Real" ? "REAL" : undefined,
+            confidence: parsed.confidence_percentage,
+            fake_prob: parsed.raw_scores?.Fake ? parsed.raw_scores.Fake / 100 : undefined,
+          };
+        } catch (e) {
+          console.warn("Failed to parse FakeCatcher image result:", e);
+        }
+      }
+
+      const scanId = `fc-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setJobMeta(scanId, {
+        userId,
+        fileName,
+        fileType,
+        source: "fakecatcher",
+        createdAt: new Date().toISOString(),
+        imageData,
+      });
+
+      if (rdOutcome) {
+        setJobRdAnalysis(scanId, {
+          ...rdOutcome,
+          analyzedAt: new Date().toISOString(),
+        });
+      }
+
+      if (fcOutcome) {
+        setJobFakeCatcherAnalysis(scanId, {
+          label: fcOutcome.label,
+          confidence: fcOutcome.confidence,
+          fake_prob: fcOutcome.fake_prob,
+          analyzedAt: new Date().toISOString(),
+        });
+      }
+
+      // Determine final status for MongoDB
+      const finalStatus = fcOutcome ? (fcOutcome.label === "FAKE" ? "DEEPFAKE" : fcOutcome.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS") : "UNCERTAIN";
+      const finalConfidence = fcOutcome?.confidence ? Math.round(fcOutcome.confidence * 10) / 10 : 50;
+      
+      // Save to MongoDB for dashboard
+      try {
+        await connectToDatabase();
+        await VerificationResult.create({
+          userId,
+          scanId,
+          fileName,
+          fileType,
+          status: (finalStatus === "UNCERTAIN" ? "SUSPICIOUS" : finalStatus) as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
+          confidenceScore: finalConfidence,
+          modelsUsed: ["FakeCatcher", ...(rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED" ? ["RealityDefender"] : [])],
+          imageUrl: imageData || "",
+          createdAt: new Date(),
+        });
+      } catch (dbError) {
+        console.warn("Failed to save image scan to MongoDB:", dbError);
+      }
+
+      return NextResponse.json(
+        {
+          scanId,
+          status: finalStatus,
+          fileName,
+          fileType,
+          dualModel: {
+            fakecatcher: Boolean(fcOutcome),
+            realityDefender: rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED",
+          },
+          fc: fcOutcome ? {
+            label: fcOutcome.label,
+            confidence: fcOutcome.confidence,
+            fake_prob: fcOutcome.fake_prob,
+          } : null,
+          rd: rdOutcome?.status !== "ERROR" ? {
+            status: rdOutcome?.status,
+            score: rdOutcome?.score,
+          } : null,
+        },
+        { status: 200 }
+      );
+    }
+
     if (fileType === "video" && uploadedFile) {
       const payload = new FormData();
       payload.append("file", uploadedFile);
@@ -457,6 +593,7 @@ export async function POST(req: NextRequest) {
           const rdScanId = `rd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           const rdManipulationScore = mapRdToManipulationScore(rdOutcome?.status, rdOutcome?.score);
           const rdStatus = mapCombinedStatus(rdManipulationScore);
+          const rdConfidence = Math.round(clamp01(rdManipulationScore) * 1000) / 10;
 
           setJobMeta(rdScanId, {
             userId,
@@ -471,6 +608,23 @@ export async function POST(req: NextRequest) {
               ...rdOutcome,
               analyzedAt: new Date().toISOString(),
             });
+          }
+
+          // Save to MongoDB for dashboard
+          try {
+            await connectToDatabase();
+            await VerificationResult.create({
+              userId,
+              scanId: rdScanId,
+              fileName,
+              fileType,
+              status: rdStatus as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
+              confidenceScore: rdConfidence,
+              modelsUsed: ["RealityDefender"],
+              createdAt: new Date(),
+            });
+          } catch (dbError) {
+            console.warn("Failed to save RD-only fallback to MongoDB:", dbError);
           }
 
           return NextResponse.json(
@@ -507,6 +661,7 @@ export async function POST(req: NextRequest) {
         fileType,
         source: "fakecatcher",
         createdAt: new Date().toISOString(),
+        imageData: imageData,
       });
 
       if (rdOutcome) {
@@ -545,6 +700,7 @@ export async function POST(req: NextRequest) {
       fileType,
       source: "rd-only",
       createdAt: new Date().toISOString(),
+      imageData: fileType === "image" ? imageData : undefined,
     });
 
     if (rdOutcome) {
