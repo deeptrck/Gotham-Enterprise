@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { LogOut, LogIn, UserPlus, Menu } from "lucide-react";
+import { LogOut, LogIn, UserPlus, Menu, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useUser, useClerk } from "@clerk/nextjs";
@@ -193,6 +193,12 @@ export default function Header() {
         {/* <ThemeToggle /> */}
       </div>
 
+      <Link
+        href="/report-bug"
+        className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg hover:bg-blue-700 transition md:bottom-5 md:right-5"
+      >
+        <Bug className="h-4 w-4" /> Report Bug
+      </Link>
       {/* Mobile menu (hamburger) */}
       <div className="flex md:hidden items-center gap-2">
         {/* <ThemeToggle /> */}

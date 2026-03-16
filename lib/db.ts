@@ -14,16 +14,16 @@ declare global {
 }
 
 // Use global cache to avoid multiple connections in development
-const globalWithMongoose = global as typeof global & {
+const globalWithMongoose = (globalThis as typeof globalThis & {
   mongoose?: CachedMongoose;
-};
+});
 
 // Ensure cached always exists
-const cached: CachedMongoose = globalWithMongoose.mongoose ?? {
-  conn: null,
-  promise: null,
-};
-globalWithMongoose.mongoose = cached;
+if (!globalWithMongoose.mongoose) {
+  globalWithMongoose.mongoose = { conn: null, promise: null };
+}
+
+const cached: CachedMongoose = globalWithMongoose.mongoose;
 
 export async function connectToDatabase(): Promise<typeof mongoose> {
   // Ensure MONGODB_URI is defined at runtime

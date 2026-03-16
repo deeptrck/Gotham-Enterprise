@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Eye, FileText, TrendingUp, Wallet } from "lucide-react";
+import { Eye, FileText, TrendingUp, Wallet, Bug } from "lucide-react";
 import { fetchDashboardData } from "@/lib/api";
 import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
@@ -294,13 +295,18 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* HEADER */}
-        <div className="border-b border-gray-200 dark:border-gray-800 pb-4">
-          <h1 className="text-3xl font-bold text-black dark:text-white">
-            Manage Your Media Verification
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Track usage, review recent scans, and monitor authenticity insights.
-          </p>
+        <div className="border-b border-gray-200 dark:border-gray-800 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h1 className="text-3xl font-bold text-black dark:text-white">
+              Manage Your Media Verification
+            </h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Track usage, review recent scans, and monitor authenticity insights.
+            </p>
+          </div>
+          <Link href="/report-bug" className="inline-flex items-center gap-2 rounded-md border border-indigo-500 bg-indigo-500 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-600 transition">
+            <Bug className="h-4 w-4" /> Report a Bug
+          </Link>
         </div>
 
         {/* GRID */}

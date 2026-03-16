@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import LoadingSpinner from "@/components/ui/loading-spinner";
+import Link from "next/link";
 import { Activity, AudioWaveform, BadgeCheck, BookOpen, Bot, Clock3, FileSearch, Fingerprint, Globe, ShieldAlert, ShieldCheck, Siren, Users, Waves } from "lucide-react";
 
 type Severity = "Low" | "Medium" | "High" | "Critical";
@@ -139,6 +140,9 @@ export default function AdminDashboardClient() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ScanRow[]>([]);
   const [fetchMs, setFetchMs] = useState(0);
+  const [bugReports, setBugReports] = useState<Array<{ _id: string; title: string; status: string; priority: string; createdAt: string; page?: string }>>([]);
+  const [complianceStatus, setComplianceStatus] = useState<string | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -186,6 +190,26 @@ export default function AdminDashboardClient() {
         setResults(all);
         setError(degradedMessage);
         setFetchMs(Math.round(performance.now() - started));
+
+        try {
+          const bugsResponse = await fetch("/api/bugs", {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+          });
+          if (bugsResponse.ok) {
+            const bugPayload = (await bugsResponse.json()) as { bugs?: Array<{ _id: string; title: string; status: string; priority: string; createdAt: string; page?: string }> };
+            if (mounted) {
+              setBugReports(bugPayload.bugs ? bugPayload.bugs.slice(0, 5) : []);
+            }
+          } else {
+            if (mounted) {
+              setBugReports([]);
+            }
+          }
+        } catch {
+          if (mounted) setBugReports([]);
+        }
       } catch (err) {
         if (!mounted) return;
         setError(err instanceof Error ? err.message : "Failed to load admin data");
@@ -199,6 +223,29 @@ export default function AdminDashboardClient() {
       mounted = false;
     };
   }, []);
+
+  const exportComplianceSnapshot = async () => {
+    setComplianceStatus(null);
+    setComplianceLoading(true);
+    try {
+      const response = await fetch("/api/admin/compliance-snapshot", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setComplianceStatus(payload.error || "Could not generate compliance snapshot.");
+        return;
+      }
+      const payload = await response.json();
+      setComplianceStatus(`Snapshot exported: ${payload.snapshotId || "success"}`);
+    } catch (err) {
+      setComplianceStatus("Failed to export compliance snapshot. Try again.");
+    } finally {
+      setComplianceLoading(false);
+    }
+  };
 
   const data = useMemo(() => {
     const total = results.length;
@@ -367,9 +414,47 @@ export default function AdminDashboardClient() {
             <div className="inline-flex items-center rounded-md border px-3 py-1 text-xs"><ShieldCheck className="mr-1 h-3 w-3" />SOC-ready workflow</div>
             <div className="inline-flex items-center rounded-md border px-3 py-1 text-xs"><Fingerprint className="mr-1 h-3 w-3" />C2PA + provenance aware</div>
             <div className="inline-flex items-center rounded-md border px-3 py-1 text-xs"><AudioWaveform className="mr-1 h-3 w-3" />Cross-media detection pipeline</div>
-            <Button size="sm" className="ml-auto">Export Compliance Snapshot</Button>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={exportComplianceSnapshot} disabled={complianceLoading}>
+                {complianceLoading ? "Exporting..." : "Export Compliance Snapshot"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => window.location.href = "/admin/bugs"}>
+                View Bug Reports
+              </Button>
+            </div>
           </CardContent>
+          {complianceStatus && (
+            <CardContent className="border-t border-slate-200 dark:border-slate-700 text-sm text-slate-700 dark:text-slate-200">
+              {complianceStatus}
+            </CardContent>
+          )}
         </Card>
+
+        {bugReports.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">Recent Reported Bugs</CardTitle>
+              <CardDescription>Latest 5 reports from the bug-feedback channel</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {bugReports.map((bug) => (
+                <div key={bug._id} className="rounded border border-slate-200 dark:border-slate-700 p-2 bg-slate-50 dark:bg-slate-800">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-slate-900 dark:text-slate-100 text-sm">{bug.title}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${bug.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>
+                      {bug.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Priority: {bug.priority} • {new Date(bug.createdAt).toLocaleString()}</p>
+                  {bug.page && <p className="text-xs text-slate-500 dark:text-slate-400">Page: {bug.page}</p>}
+                </div>
+              ))}
+              <div className="text-right">
+                <Link href="/admin/bugs" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-200">See all bug reports</Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={mode} onValueChange={setMode}>
           <TabsList>

@@ -73,7 +73,7 @@ async function handleSubmit(e: React.FormEvent) {
 
       if (completeSignUp.status === "complete") {
         await setActive({ session: completeSignUp.createdSessionId });
-        router.push("/login");
+        router.push("/");
         return;
       }
 
