@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getJobMeta, getJobRdAnalysis, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobRdAnalysis, setJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
-import { verifyMedia } from "@/lib/realityDefender";
+import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
@@ -257,24 +256,16 @@ export async function GET(req: NextRequest) {
     });
 
     const rdOnlyScans = listUserJobMeta(userId)
-      .filter((meta) => meta.source === "rd-only" || meta.source === "fakecatcher")
+      .filter((meta) => meta.source === "fakecatcher")
       .map((meta) => {
-        const rd = getJobRdAnalysis(meta.jobId);
-        const fc = (meta.source === "fakecatcher") ? getJobFakeCatcherAnalysis(meta.jobId) : undefined;
-        
-        // Calculate final status: if FakeCatcher present, use it; otherwise use RD
+        const fc = getJobFakeCatcherAnalysis(meta.jobId);
         let status = "SUSPICIOUS";
         let confidenceScore = 50;
-        
         if (fc?.label) {
           status = fc.label === "FAKE" ? "DEEPFAKE" : fc.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS";
           confidenceScore = fc.confidence ? Math.round(fc.confidence * 10) / 10 : 50;
-        } else if (rd) {
-          const manipulationScore = mapRdToManipulationScore(rd?.status, rd?.score);
-          status = mapCombinedStatus(manipulationScore);
-          confidenceScore = Math.round(clamp01(manipulationScore) * 1000) / 10;
         }
-        
+
         return {
           _id: meta.jobId,
           scanId: meta.jobId,
@@ -414,70 +405,30 @@ export async function POST(req: NextRequest) {
     }
     chargedUserId = userId;
 
-    const shouldRunRD = Boolean(process.env.REALITY_DEFENDER_API_KEY);
-
-    let rdOutcome:
-      | {
-          status: string;
-          score: number;
-          requestId?: string;
-          models: Array<{ name: string; status: string; score: number }>;
-          error?: string;
-        }
-      | undefined;
-
-    if (!shouldRunRD) {
-      rdOutcome = {
-        status: "DISABLED",
-        score: 0,
-        models: [],
-        error: "REALITY_DEFENDER_API_KEY is not set at scan time",
-      };
-    }
-
-    if (shouldRunRD) {
-      try {
-        const rd = urlInput
-          ? await verifyMedia({
-              url: urlInput,
-              fileType,
-            })
-          : await (async () => {
-              if (!uploadedFile) {
-                throw new Error("No media file provided for Reality Defender verification");
-              }
-              const arrayBuffer = await uploadedFile.arrayBuffer();
-              return verifyMedia({
-                fileBuffer: Buffer.from(arrayBuffer),
-                fileType,
-              });
-            })();
-
-        rdOutcome = {
-          requestId: rd.requestId,
-          status: rd.status,
-          score: Math.max(0, Math.min(1, rd.score || 0)),
-          models: (rd.models || []).map((model) => ({
-            name: model.name || "rd-model",
-            status: model.status || "UNKNOWN",
-            score: Math.max(0, Math.min(1, Number(model.score) || 0)),
-          })),
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Reality Defender verification failed";
-        rdOutcome = {
-          status: "ERROR",
-          score: 0,
-          models: [],
-          error: message,
-        };
-        console.warn("Reality Defender scan failed; continuing with FakeCatcher:", message);
-      }
-    }
+    let rdOutcome = {
+      status: "DISABLED",
+      score: 0,
+      models: [] as Array<{ name: string; status: string; score: number }>,
+      error: "Reality Defender is disabled",
+    };
 
     let fcOutcome: { label?: string; confidence?: number; fake_prob?: number } | undefined;
 
     if (fileType === "image" && uploadedFile) {
+      if (!imageData) {
+        try {
+          const arr = await uploadedFile.arrayBuffer();
+          const b64 = Buffer.from(arr).toString("base64");
+          if (uploadedFile.type) {
+            imageData = `data:${uploadedFile.type};base64,${b64}`;
+          } else {
+            imageData = `data:image/png;base64,${b64}`;
+          }
+        } catch (e) {
+          console.warn("Failed to generate image preview data URL:", e);
+        }
+      }
+
       const payload = new FormData();
       payload.append("file", uploadedFile);
 
@@ -509,13 +460,6 @@ export async function POST(req: NextRequest) {
         imageData,
       });
 
-      if (rdOutcome) {
-        setJobRdAnalysis(scanId, {
-          ...rdOutcome,
-          analyzedAt: new Date().toISOString(),
-        });
-      }
-
       if (fcOutcome) {
         setJobFakeCatcherAnalysis(scanId, {
           label: fcOutcome.label,
@@ -539,21 +483,13 @@ export async function POST(req: NextRequest) {
           fileType,
           status: (finalStatus === "UNCERTAIN" ? "SUSPICIOUS" : finalStatus) as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
           confidenceScore: finalConfidence,
-          modelsUsed: ["FakeCatcher", ...(rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED" ? ["RealityDefender"] : [])],
+          modelsUsed: ["FakeCatcher"],
           imageUrl: imageData || "",
           fcAnalysis: fcOutcome ? {
             label: fcOutcome.label,
             confidence: fcOutcome.confidence,
             fake_prob: fcOutcome.fake_prob,
             analyzedAt: new Date().toISOString(),
-          } : undefined,
-          rdAnalysis: rdOutcome ? {
-            requestId: rdOutcome.requestId,
-            status: rdOutcome.status,
-            score: rdOutcome.score,
-            models: rdOutcome.models,
-            analyzedAt: new Date().toISOString(),
-            error: rdOutcome.error,
           } : undefined,
           createdAt: new Date(),
         });
@@ -569,16 +505,12 @@ export async function POST(req: NextRequest) {
           fileType,
           dualModel: {
             fakecatcher: Boolean(fcOutcome),
-            realityDefender: rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED",
+            realityDefender: false,
           },
           fc: fcOutcome ? {
             label: fcOutcome.label,
             confidence: fcOutcome.confidence,
             fake_prob: fcOutcome.fake_prob,
-          } : null,
-          rd: rdOutcome?.status !== "ERROR" ? {
-            status: rdOutcome?.status,
-            score: rdOutcome?.score,
           } : null,
         },
         { status: 200 }
@@ -591,72 +523,6 @@ export async function POST(req: NextRequest) {
 
       const submit = await postVideoWithRetry(payload, 2);
       if (!submit.ok) {
-        const rdFallbackAvailable = Boolean(
-          rdOutcome && rdOutcome.status !== "ERROR" && rdOutcome.status !== "DISABLED"
-        );
-
-        if (rdFallbackAvailable) {
-          const rdScanId = `rd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const rdManipulationScore = mapRdToManipulationScore(rdOutcome?.status, rdOutcome?.score);
-          const rdStatus = mapCombinedStatus(rdManipulationScore);
-          const rdConfidence = Math.round(clamp01(rdManipulationScore) * 1000) / 10;
-
-          setJobMeta(rdScanId, {
-            userId,
-            fileName,
-            fileType,
-            source: "rd-only",
-            createdAt: new Date().toISOString(),
-          });
-
-          if (rdOutcome) {
-            setJobRdAnalysis(rdScanId, {
-              ...rdOutcome,
-              analyzedAt: new Date().toISOString(),
-            });
-          }
-
-          // Save to MongoDB for dashboard
-          try {
-            await connectToDatabase();
-            await VerificationResult.create({
-              userId,
-              scanId: rdScanId,
-              fileName,
-              fileType,
-              status: rdStatus as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
-              confidenceScore: rdConfidence,
-              modelsUsed: ["RealityDefender"],
-              rdAnalysis: rdOutcome ? {
-                requestId: rdOutcome.requestId,
-                status: rdOutcome.status,
-                score: rdOutcome.score,
-                models: rdOutcome.models,
-                analyzedAt: new Date().toISOString(),
-                error: rdOutcome.error,
-              } : undefined,
-              createdAt: new Date(),
-            });
-          } catch (dbError) {
-            console.warn("Failed to save RD-only fallback to MongoDB:", dbError);
-          }
-
-          return NextResponse.json(
-            {
-              scanId: rdScanId,
-              status: rdStatus,
-              fileName,
-              fileType,
-              dualModel: {
-                fakecatcher: false,
-                realityDefender: true,
-              },
-              warning: "FakeCatcher backend timed out. Returned Reality Defender result only.",
-            },
-            { status: 202 }
-          );
-        }
-
         if (chargedUserId) {
           await refundUserCredit(userId);
           chargedUserId = null;
@@ -678,81 +544,24 @@ export async function POST(req: NextRequest) {
         imageData: imageData,
       });
 
-      if (rdOutcome) {
-        setJobRdAnalysis(parsed.job_id, {
-          ...rdOutcome,
-          analyzedAt: new Date().toISOString(),
-        });
-      }
-
       return NextResponse.json(
         {
           scanId: parsed.job_id,
           status: parsed.status || "queued",
           fileName: parsed.filename || fileName,
           fileType,
-          dualModel: rdOutcome
-            ? {
-                fakecatcher: true,
-                realityDefender: rdOutcome.status !== "ERROR",
-              }
-            : {
-                fakecatcher: true,
-                realityDefender: false,
-              },
+          dualModel: {
+            fakecatcher: true,
+            realityDefender: false,
+          },
         },
         { status: 202 }
       );
     }
 
-    const rdScanId = `rd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const rdAvailable = rdOutcome?.status !== "ERROR" && rdOutcome?.status !== "DISABLED";
-
-    setJobMeta(rdScanId, {
-      userId,
-      fileName,
-      fileType,
-      source: "rd-only",
-      createdAt: new Date().toISOString(),
-      imageData: fileType === "image" ? imageData : undefined,
-    });
-
-    if (rdOutcome) {
-      setJobRdAnalysis(rdScanId, {
-        ...rdOutcome,
-        analyzedAt: new Date().toISOString(),
-      });
-    }
-
-    const rdManipulationScore = mapRdToManipulationScore(rdOutcome?.status, rdOutcome?.score);
-    const rdStatus = mapCombinedStatus(rdManipulationScore);
-
     return NextResponse.json(
-      {
-        scanId: rdScanId,
-        status: rdStatus,
-        fileName,
-        fileType,
-        dualModel: {
-          fakecatcher: false,
-          realityDefender: Boolean(rdOutcome) && rdAvailable,
-        },
-        rd: rdOutcome
-          ? {
-              status: rdOutcome.status,
-              score: rdOutcome.score,
-              mappedStatus: rdStatus,
-              mappedManipulationScore: clamp01(rdManipulationScore),
-              models: (rdOutcome.models || []).map((m) => ({
-                name: m.name,
-                status: mapRdModelStatus(m.status),
-                score: clamp01(m.score),
-              })),
-              error: rdOutcome.error,
-            }
-          : null,
-      },
-      { status: 202 }
+      { error: "Unsupported file type for direct scan. Please upload image or video." },
+      { status: 400 }
     );
   } catch (error) {
     console.error("Error proxying scans POST request:", error);

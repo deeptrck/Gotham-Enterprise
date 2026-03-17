@@ -321,16 +321,15 @@ export async function GET(
       status: rdUsable ? combinedStatus : mapJobToStatus(label),
       confidenceScore: Math.round(combinedScore * 1000) / 10,
       createdAt,
-      imageUrl: "",
+      imageUrl: meta?.imageData || "",
       modelsUsed: allModels.map((m) => m.name),
       description,
       features: [
         `job_status:${job.status}`,
         `fake_prob:${fakeProb}`,
         `label:${label || "UNCERTAIN"}`,
-        rd ? `rd_status:${rd.status}` : "rd_status:unavailable",
         rdUsable ? "rd_used:true" : "rd_used:false",
-        `fusion_score:${combinedScore.toFixed(4)}`,
+        `score:${combinedScore.toFixed(4)}`,
       ],
     };
 

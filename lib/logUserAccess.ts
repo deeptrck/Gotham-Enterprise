@@ -22,7 +22,7 @@ export async function logUserAccess(input: AccessLogInput): Promise<void> {
     const { clerkId, accessType, routePath, method, userAgent, ipAddress } = input;
 
     // Get user email from User model
-    const user = await User.findOne({ clerkId }).select("email").lean();
+    const user = (await User.findOne({ clerkId }).select("email").lean()) as { email?: string } | null;
     if (!user?.email) {
       console.warn(`User not found for clerkId: ${clerkId}`);
       return;

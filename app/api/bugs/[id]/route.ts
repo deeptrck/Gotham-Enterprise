@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { BugReport } from "@/lib/models/BugReport";
 import { getAdminEmailAllowlist, isEmailAllowlisted } from "@/lib/adminAccess";
@@ -23,15 +23,16 @@ const requireAdmin = async () => {
   return null;
 };
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  return NextResponse.json({ ok: true, id: params.id });
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  return NextResponse.json({ ok: true, id });
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
   const errorResponse = await requireAdmin();
   if (errorResponse) return errorResponse;
 
-  const { id } = params;
   const body = await request.json();
   const { status } = body as { status?: "open" | "resolved" };
 
@@ -49,11 +50,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   return NextResponse.json({ success: true, bug: updated });
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
   const errorResponse = await requireAdmin();
   if (errorResponse) return errorResponse;
 
-  const { id } = params;
   const deleted = await BugReport.findByIdAndDelete(id).lean();
   if (!deleted) {
     return NextResponse.json({ error: "Bug not found" }, { status: 404 });

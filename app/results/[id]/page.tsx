@@ -25,24 +25,10 @@ type ResultData = {
   imageUrl: string;
   description?: string;
   modelsUsed: string[];
-  rdModels: RdModel[];
-  fusionSummary?: {
-    score: number;
-    status: string;
-    weights: {
-      fakecatcher: number;
-      realityDefender: number;
-    };
-  };
   fakecatcherSummary?: {
     confidence?: number;
     fake_prob?: number;
     label?: string;
-  } | null;
-  realityDefenderSummary?: {
-    status?: string;
-    score?: number;
-    error?: string;
   } | null;
   feedbackSummary?: {
     falsePositive: number;
@@ -122,12 +108,6 @@ useEffect(() => {
         parsed = {};
       }
 
-      const rdModels = parsed.rd?.models?.map((m) => ({
-        name: m.name,
-        status: m.status,
-        score: typeof m.score === "number" ? m.score : 0,
-      })) || [];
-
       setResultData({
         fileName: data.fileName,
         scanId: data.scanId,
@@ -135,25 +115,10 @@ useEffect(() => {
         status: data.status,
         confidenceScore: data.confidenceScore,
         createdAt: data.createdAt,
-        imageUrl: data.imageUrl || "/file.svg",
+        imageUrl: data.imageUrl || "",
         description: data.description,
         modelsUsed: data.modelsUsed || [],
-        rdModels,
-        fusionSummary: parsed.rd?.fusion
-          ? {
-              score: typeof parsed.rd.fusion.score === "number" ? parsed.rd.fusion.score : 0,
-              status: parsed.rd.fusion.status || "UNKNOWN",
-              weights: {
-                fakecatcher: typeof parsed.rd.fusion.weights?.fakecatcher === "number" ? parsed.rd.fusion.weights.fakecatcher : 1,
-                realityDefender:
-                  typeof parsed.rd.fusion.weights?.realityDefender === "number"
-                    ? parsed.rd.fusion.weights.realityDefender
-                    : 0,
-              },
-            }
-          : undefined,
         fakecatcherSummary: parsed.rd?.fakecatcher || null,
-        realityDefenderSummary: parsed.rd?.realityDefender || null,
         feedbackSummary: data.feedbackSummary,
         userFeedback: data.userFeedback,
       });
@@ -238,16 +203,24 @@ useEffect(() => {
         <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-neutral-800 flex flex-col md:flex-row gap-10">
           {/* Image */}
           <div className="w-full md:w-[300px]">
-            {resultData.fileType === "image" && resultData.imageUrl ? (
-              <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800">
-                <Image
-                  src={resultData.imageUrl}
-                  alt={resultData.fileName}
-                  width={300}
-                  height={260}
-                  className="object-cover"
-                />
-              </div>
+            {resultData.imageUrl ? (
+              resultData.fileType === "video" ? (
+                <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800">
+                  <video
+                    controls
+                    className="w-full h-[260px] object-cover"
+                    src={resultData.imageUrl}
+                  />
+                </div>
+              ) : (
+                <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800">
+                  <img
+                    src={resultData.imageUrl}
+                    alt={resultData.fileName}
+                    className="w-full h-[260px] object-cover"
+                  />
+                </div>
+              )
             ) : (
               <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 dark:border-neutral-800 bg-gray-100 dark:bg-gray-800 flex items-center justify-center h-[260px]">
                 <div className="text-center text-gray-500 dark:text-gray-400">
@@ -279,52 +252,13 @@ useEffect(() => {
         </div>
 
         <div className="mt-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-neutral-800">
-          <h3 className="text-lg font-semibold mb-3">Fusion summary</h3>
-
-          {resultData.fusionSummary ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <p>
-                  <span className="font-semibold">Final fused status:</span> {resultData.fusionSummary.status}
-                </p>
-                <p>
-                  <span className="font-semibold">Final fused confidence:</span> {(resultData.fusionSummary.score * 100).toFixed(1)}%
-                </p>
-                <p>
-                  <span className="font-semibold">FakeCatcher weight:</span> {(resultData.fusionSummary.weights.fakecatcher * 100).toFixed(0)}%
-                </p>
-                <p>
-                  <span className="font-semibold">Reality Defender weight:</span> {(resultData.fusionSummary.weights.realityDefender * 100).toFixed(0)}%
-                </p>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3">
-                  <p className="font-semibold mb-1">FakeCatcher</p>
-                  <p>Label: {resultData.fakecatcherSummary?.label || "N/A"}</p>
-                  <p>Fake probability: {typeof resultData.fakecatcherSummary?.fake_prob === "number" ? `${(resultData.fakecatcherSummary.fake_prob * 100).toFixed(1)}%` : "N/A"}</p>
-                  <p>Confidence: {typeof resultData.fakecatcherSummary?.confidence === "number" ? `${resultData.fakecatcherSummary.confidence.toFixed(1)}%` : "N/A"}</p>
-                </div>
-
-                <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3">
-                  <p className="font-semibold mb-1">Reality Defender</p>
-                  <p>Status: {resultData.realityDefenderSummary?.status || "N/A"}</p>
-                  <p>
-                    Score: {typeof resultData.realityDefenderSummary?.score === "number" ? `${(resultData.realityDefenderSummary.score * 100).toFixed(1)}%` : "N/A"}
-                  </p>
-                  {resultData.realityDefenderSummary?.error && (
-                    <p className="text-xs mt-1 text-red-600 dark:text-red-400">
-                      Reason: {resultData.realityDefenderSummary.error}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Fusion details are not available for this result.
-            </p>
-          )}
+          <h3 className="text-lg font-semibold mb-3">DeepTrack result</h3>
+          <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 text-sm">
+            <p className="font-semibold mb-1">FakeCatcher</p>
+            <p>Label: {resultData.fakecatcherSummary?.label || "N/A"}</p>
+            <p>Fake probability: {typeof resultData.fakecatcherSummary?.fake_prob === "number" ? `${(resultData.fakecatcherSummary.fake_prob * 100).toFixed(1)}%` : "N/A"}</p>
+            <p>Confidence: {typeof resultData.fakecatcherSummary?.confidence === "number" ? `${resultData.fakecatcherSummary.confidence.toFixed(1)}%` : "N/A"}</p>
+          </div>
         </div>
 
         <div className="mt-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-neutral-800">
@@ -370,56 +304,6 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Model Results */}
-        <h3 className="mt-12 mb-4 text-xl font-semibold">Model Analysis Breakdown</h3>
-
-        <div className="flex flex-col gap-5">
-          {resultData.rdModels.map((model, index) => {
-            const mapped = modelMap[model.name];
-            const label = mapped?.label || model.name;
-            const description = mapped?.description || "";
-
-            const statusColor =
-              model.status === "MANIPULATED"
-                ? "border-red-600/80 bg-red-600/10"
-                : model.status === "AUTHENTIC"
-                ? "border-green-600/80 bg-green-600/10"
-                : "border-yellow-500/80 bg-yellow-500/10";
-
-            return (
-              <div
-                key={index}
-                className={`rounded-xl border-l-8 p-5 shadow-md ${statusColor} border dark:border-neutral-800`}
-              >
-                <div className="flex items-start justify-between flex-col sm:flex-row gap-4">
-                  <div>
-                    <h4 className="text-lg font-semibold">{label}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md">
-                      {description}
-                    </p>
-                  </div>
-                  <div className="w-full sm:w-52">
-                    <p className="text-xs mb-1 opacity-80">
-                      Confidence: {(model.score * 100).toFixed(1)}%
-                    </p>
-                    <div className="w-full bg-gray-300 dark:bg-neutral-700 h-2 rounded-full">
-                      <div
-                        className={`h-2 rounded-full ${
-                          model.status === "MANIPULATED"
-                            ? "bg-red-600"
-                            : model.status === "AUTHENTIC"
-                            ? "bg-green-600"
-                            : "bg-yellow-500"
-                        }`}
-                        style={{ width: `${model.score * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </main>
     </div>
   );

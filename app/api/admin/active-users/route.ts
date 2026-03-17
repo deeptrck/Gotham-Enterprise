@@ -46,7 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     // Check admin access
-    const user = await User.findOne({ clerkId: userId }).select("email").lean();
+    const user = await User.findOne({ clerkId: userId }).select("email").lean() as { email?: string } | null;
     if (!user?.email) {
       return NextResponse.json(
         { error: "User not found" },
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    if (!isEmailAllowlisted(user.email)) {
+    if (!isEmailAllowlisted([user.email])) {
       return NextResponse.json(
         {
           error: "Access denied. Admin access required.",
