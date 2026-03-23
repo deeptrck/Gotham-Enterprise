@@ -32,9 +32,9 @@ export default function PricingBillingPage() {
       name: "Trial",
       price: "Free",
       description: "Get started",
-      credits: 5,
+      credits: 20,
       features: [
-        "5 scan credits",
+        "20 scan credits",
         "Basic results",
         "30-day access",
         "Email support",
@@ -44,15 +44,15 @@ export default function PricingBillingPage() {
     {
       id: "starter",
       name: "Starter",
-      priceMonthly: "$99",
-      usdAmountMonthly: 99,
-      priceYearly: "$950",
-      usdAmountYearly: 950,
-      savingsYearly: "Save $238",
+      priceMonthly: "$75",
+      usdAmountMonthly: 75,
+      priceYearly: "$720",
+      usdAmountYearly: 720,
+      savingsYearly: "Save $180",
       description: "For individuals",
-      credits: 100,
+      credits: 150,
       features: [
-        "100 scan credits/month",
+        "150 scan credits/month",
         "Advanced analytics",
         "API access",
         "Priority support",
@@ -61,17 +61,17 @@ export default function PricingBillingPage() {
       highlighted: false,
     },
     {
-      id: "growth",
-      name: "Growth",
-      priceMonthly: "$499",
-      usdAmountMonthly: 499,
-      priceYearly: "$4,790",
-      usdAmountYearly: 4790,
-      savingsYearly: "Save $1,198",
+      id: "pro",
+      name: "Pro",
+      priceMonthly: "$259",
+      usdAmountMonthly: 259,
+      priceYearly: "$2,486",
+      usdAmountYearly: 2486,
+      savingsYearly: "Save $622",
       description: "Most popular",
-      credits: 1000,
+      credits: 600,
       features: [
-        "1,000 scan credits/month",
+        "600 scan credits/month",
         "Real-time dashboards",
         "Webhook integrations",
         "Team collaboration (5 users)",
@@ -79,6 +79,27 @@ export default function PricingBillingPage() {
         "Advanced reporting",
       ],
       highlighted: true,
+    },
+    {
+      id: "business",
+      name: "Business ",
+      priceMonthly: "$999",
+      usdAmountMonthly: 999,
+      priceYearly: "$9,590",
+      usdAmountYearly: 9590,
+      savingsYearly: "Save $2,398",
+      description: "For growing businesses",
+      credits: 2500,
+      features: [
+        "2,500 scan credits/month",
+        "Advanced analytics & reporting",
+        "API access & webhooks",
+        "Team collaboration (10 users)",
+        "Priority 24/7 support",
+        "Custom integrations",
+        "Bulk scanning tools",
+      ],
+      highlighted: false,
     },
     {
       id: "enterprise",
@@ -279,11 +300,11 @@ export default function PricingBillingPage() {
         )}
 
         {/* Pricing Plans */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="flex flex-col lg:flex-row gap-6 overflow-x-auto pb-4">
           {plans.map((plan) => (
             <div
               key={plan.id}
-              className={`relative rounded-xl transition-all duration-300 ${
+              className={`relative rounded-xl transition-all duration-300 flex-shrink-0 w-full lg:w-64 ${
                 plan.highlighted
                   ? "lg:scale-105 bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-2xl"
                   : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md hover:shadow-lg border border-slate-200 dark:border-slate-700"
@@ -298,16 +319,16 @@ export default function PricingBillingPage() {
                 </div>
               )}
 
-              <div className="p-8">
+              <div className="p-6">
                 {/* Plan name and description */}
-                <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
-                <p className={plan.highlighted ? "text-blue-100" : "text-slate-600 dark:text-slate-400"}>
+                <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
+                <p className={`text-sm mb-4 ${plan.highlighted ? "text-blue-100" : "text-slate-600 dark:text-slate-400"}`}>
                   {plan.description}
                 </p>
 
                 {/* Price */}
-                <div className="my-6">
-                  <span className="text-4xl font-bold">
+                <div className="mb-6">
+                  <span className="text-3xl font-bold">
                     {plan.id === 'trial' || plan.id === 'enterprise'
                       ? plan.price
                       : billingPeriod === 'monthly'
@@ -315,39 +336,31 @@ export default function PricingBillingPage() {
                       : plan.priceYearly}
                   </span>
                   {plan.id !== "trial" && plan.id !== "enterprise" && (
-                    <span className={plan.highlighted ? "text-blue-100" : "text-slate-600 dark:text-slate-400"}>
+                    <span className={`text-sm ${plan.highlighted ? "text-blue-100" : "text-slate-600 dark:text-slate-400"}`}>
                       {" "}/{billingPeriod === 'monthly' ? 'month' : 'year'}
                     </span>
                   )}
                   {plan.id !== "trial" && plan.id !== "enterprise" && billingPeriod === 'yearly' && plan.savingsYearly && (
-                    <div className={`text-sm mt-2 ${plan.highlighted ? 'text-blue-100' : 'text-green-600 dark:text-green-400'}`}>
+                    <div className={`text-xs mt-1 font-medium ${plan.highlighted ? 'text-blue-100' : 'text-green-600 dark:text-green-400'}`}>
                       {plan.savingsYearly}
                     </div>
                   )}
                 </div>
 
                 {/* CTA Button */}
-                <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-                  {plan.id !== 'trial' && plan.id !== 'enterprise' && (
-                    <div className="text-2xl font-bold">
-                      $
-                      {billingPeriod === 'monthly'
-                        ? plan.usdAmountMonthly ?? 0
-                        : plan.usdAmountYearly ?? 0}
-                    </div>
-                  )}
+                <div className="mb-6">
                   {plan.id === 'trial' ? (
                     <button
-                      className="w-full sm:w-auto bg-white text-blue-500 border border-blue-100 py-2 px-4 rounded-lg font-semibold"
+                      className="w-full bg-white text-blue-500 border border-blue-100 hover:bg-blue-50 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
                       onClick={() => handleSubscribeTrial(plan)}
                     >
                       {loadingRef === plan.id + "-trial" ? 'Processing...' : 'Get Started'}
                     </button>
                   ) : plan.id === 'enterprise' ? (
-                    <a href="mailto:sales@deeptrack.com" className="w-full sm:w-auto inline-flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white py-2 px-4 rounded-lg font-semibold">Contact Sales</a>
+                    <a href="mailto:sales@deeptrack.com" className="w-full inline-flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-600 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors">Contact Sales</a>
                   ) : (
                     <button
-                      className="w-full sm:w-auto bg-blue-500 text-white py-2 px-4 rounded-lg font-semibold"
+                      className="w-full bg-blue-500 text-white hover:bg-blue-600 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
                       onClick={() => openPlanCurrencyModal(plan)}
                     >
                       Choose plan
@@ -356,11 +369,11 @@ export default function PricingBillingPage() {
                 </div>
 
                 {/* Features */}
-                <ul className="space-y-3">
+                <ul className="space-y-2.5">
                   {plan.features.map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-3">
-                      <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                      <span className={`text-sm ${plan.highlighted ? "text-blue-50" : ""}`}>
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${plan.highlighted ? "text-blue-100" : "text-green-500"}`} />
+                      <span className={`text-sm leading-relaxed ${plan.highlighted ? "text-blue-50" : ""}`}>
                         {feature}
                       </span>
                     </li>
