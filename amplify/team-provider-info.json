@@ -1,0 +1,15 @@
+{
+  "prod": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-gotham-prod-a319c-authRole",
+      "UnauthRoleArn": "arn:aws:iam::097659826060:role/amplify-gotham-prod-a319c-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::097659826060:role/amplify-gotham-prod-a319c-authRole",
+      "Region": "us-east-1",
+      "DeploymentBucketName": "amplify-gotham-prod-a319c-deployment",
+      "UnauthRoleName": "amplify-gotham-prod-a319c-unauthRole",
+      "StackName": "amplify-gotham-prod-a319c",
+      "StackId": "arn:aws:cloudformation:us-east-1:097659826060:stack/amplify-gotham-prod-a319c/935903a0-3f1a-11f1-abc4-0e61884c7a1f",
+      "AmplifyAppId": "d2jymp2g4whttl"
+    }
+  }
+}

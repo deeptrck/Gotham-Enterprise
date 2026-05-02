@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { LogOut, LogIn, UserPlus, Menu, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import {
   DropdownMenu,
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function Header() {
+  const pathname = usePathname();
   const { user, isSignedIn, isLoaded } = useUser();
   const { signOut } = useClerk();
   const [canAccessAdmin, setCanAccessAdmin] = useState(false);
@@ -55,6 +57,11 @@ export default function Header() {
       cancelled = true;
     };
   }, [isSignedIn]);
+
+  // Hide header on backoffice routes
+  if (pathname?.startsWith("/backoffice")) {
+    return null;
+  }
 
   return (
     <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 shadow-sm">
@@ -107,6 +114,14 @@ export default function Header() {
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
               >
                 Admin
+              </Link>
+            )}
+            {canAccessAdmin && (
+              <Link
+                href="/backoffice"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
+              >
+                Backoffice
               </Link>
             )}
             <Link

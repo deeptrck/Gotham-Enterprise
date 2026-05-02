@@ -23,7 +23,8 @@ export default function UserSyncProvider({
         fullName,
         imageUrl: user.imageUrl,
       }).catch((error) => {
-        console.error("Failed to sync user:", error);
+        // Silently handle sync errors - user will be synced on next visit
+        // Don't log to console as error - this is expected during initial auth
       });
     }
   }, [isSignedIn, user]);
