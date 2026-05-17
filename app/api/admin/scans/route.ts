@@ -38,13 +38,28 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    const [scans, total] = await Promise.all([
+    const unresolvedQuery = {
+      confidenceScore: { $gte: 50, $lte: 75 },
+      $or: [
+        { reviewStatus: { $exists: false } },
+        { reviewStatus: "pending" },
+      ],
+    };
+
+    const [scans, total, deepfakeCount, pendingReviewCount, fpPending, fnPending, avgConfidenceResult] = await Promise.all([
       VerificationResult.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
       VerificationResult.countDocuments(query),
+      VerificationResult.countDocuments({ status: "DEEPFAKE" }),
+      VerificationResult.countDocuments(unresolvedQuery),
+      VerificationResult.countDocuments({ ...unresolvedQuery, status: "DEEPFAKE" }),
+      VerificationResult.countDocuments({ ...unresolvedQuery, status: "AUTHENTIC" }),
+      VerificationResult.aggregate([
+        { $group: { _id: null, avg: { $avg: "$confidenceScore" } } },
+      ]),
     ]);
 
     // Get user details for each scan
@@ -58,9 +73,11 @@ export async function GET(req: NextRequest) {
       return {
         id: scan.scanId,
         client: user?.fullName || user?.email || "Unknown",
+        fileName: scan.fileName,
         type: scan.fileType,
-        verdict: scan.status?.toLowerCase() || "unknown",
+        verdict: scan.status === "SUSPICIOUS" ? "review" : (scan.status?.toLowerCase() || "unknown"),
         confidence: scan.confidenceScore,
+        reviewStatus: scan.reviewStatus || null,
         time: scan.createdAt?.toISOString() || new Date().toISOString(),
         credits_used: 1,
         processing_ms: scan.rdAnalysis?.analyzedAt ? 1000 : null,
@@ -75,6 +92,15 @@ export async function GET(req: NextRequest) {
         limit,
         total,
         pages: Math.ceil(total / limit),
+      },
+      summary: {
+        total_deepfakes: deepfakeCount,
+        total_pending_review: pendingReviewCount,
+        fp_pending: fpPending,
+        fn_pending: fnPending,
+        avg_confidence: avgConfidenceResult[0]?.avg
+          ? Math.round(avgConfidenceResult[0].avg * 100) / 100
+          : 0,
       },
     });
   } catch (error) {

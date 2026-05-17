@@ -206,7 +206,7 @@ export default function ForensicsPage() {
               <CardHead title="Model score breakdown" />
               <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: 12 }}>
                 {[
-                  { label: "Reality Defender",  val: selected.rdScore,   note: "External — weighted 40%" },
+                  { label: "Deeptrack Scan",  val: selected.rdScore,   note: "External — weighted 40%" },
                   { label: "Deeptrack model",   val: selected.dtScore,   note: "Internal — weighted 60%" },
                   { label: "Ensemble (final)",  val: selected.ensemble,  note: "Combined verdict" },
                 ].map(({ label, val, note }) => (
@@ -225,7 +225,7 @@ export default function ForensicsPage() {
             </Card>
 
             <Card>
-              <CardHead title="Reality Defender sub-scores" />
+              <CardHead title="Deeptrack Scan sub-scores" />
               <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: 10 }}>
                 {RD_SUBSCORES.map(({ label, score }) => (
                   <div key={label}>

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
-import { Payment } from "@/lib/models/Payment";
 
 // GET /api/admin/clients - Get all clients with their credit info
 export async function GET(req: NextRequest) {
@@ -38,35 +37,10 @@ export async function GET(req: NextRequest) {
       User.countDocuments(query),
     ]);
 
-    // Get payment/credit info for each user
-    const userIds = users.map((u) => u.clerkId);
-    const payments = await Payment.find({ userId: { $in: userIds } })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Group payments by userId
-    const paymentsByUser = new Map<string, typeof payments>();
-    payments.forEach((p) => {
-      const existing = paymentsByUser.get(p.userId) || [];
-      existing.push(p);
-      paymentsByUser.set(p.userId, existing);
-    });
-
-    // Calculate credits for each user
     const transformedClients = users.map((user) => {
-      const userPayments = paymentsByUser.get(user.clerkId) || [];
-      
-      // Calculate total credits purchased
-      const totalCredits = userPayments.reduce((sum, p) => {
-        if (p.status === "success") {
-          return sum + (p.amount || 0);
-        }
-        return sum;
-      }, 0);
-
-      // Calculate credits used (from scan count or stored value)
       const creditsUsed = user.creditsUsed || 0;
-      const creditsRemaining = user.credits || totalCredits - creditsUsed;
+      const creditsRemaining = user.credits ?? 0;
+      const total = creditsUsed + creditsRemaining;
 
       return {
         id: user._id,
@@ -74,7 +48,7 @@ export async function GET(req: NextRequest) {
         email: user.email,
         plan: user.plan || "starter",
         used: creditsUsed,
-        total: totalCredits,
+        total,
         credits_remaining: creditsRemaining,
         calls: user.scanCount || 0,
         created_at: user.createdAt,
@@ -117,11 +91,15 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const { plan, credits } = body;
 
+    const inc: Record<string, number> = {};
     const update: Record<string, unknown> = {};
     if (plan) update.plan = plan.toLowerCase();
-    if (typeof credits === "number") update.credits = credits;
+    // Use $inc for credits so it adds to existing balance (preserves totalIssued)
+    if (typeof credits === "number") inc.credits = credits;
 
-    const user = await User.findByIdAndUpdate(clientId, update, { new: true });
+    const user = inc.credits !== undefined
+      ? await User.findByIdAndUpdate(clientId, { ...update, $inc: inc }, { new: true })
+      : await User.findByIdAndUpdate(clientId, update, { new: true });
 
     if (!user) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });

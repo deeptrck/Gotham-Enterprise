@@ -163,7 +163,7 @@ function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "v
     status: combinedStatus,
     confidenceScore: Math.round(combinedScore * 1000) / 10,
     createdAt,
-    imageUrl: getJobMeta(id)?.imageData || "",
+    imageUrl: getJobMeta(id)?.imageData || mongoDoc?.imageUrl || "",
     modelsUsed: allModels.map((m) => m.name),
     description,
     features: [

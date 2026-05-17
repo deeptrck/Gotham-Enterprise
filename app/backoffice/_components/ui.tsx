@@ -201,15 +201,18 @@ export function Tbl({ children, style }: { children: React.ReactNode; style?: Re
 
 export function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <td
-      style={{
-        padding: "8px 10px",
-        borderBottom: "0.5px solid var(--color-border-tertiary)",
-        color: "var(--color-text-primary)",
-        verticalAlign: "middle",
-        ...style,
-      }}
-    >
+   <td
+  style={{
+    paddingTop: "8px",
+    paddingBottom: "8px",
+    paddingLeft: "10px",
+    paddingRight: "10px",
+    borderBottom: "0.5px solid var(--color-border-tertiary)",
+    color: "var(--color-text-primary)",
+    verticalAlign: "middle",
+    ...style,
+  }}
+>
       {children}
     </td>
   );

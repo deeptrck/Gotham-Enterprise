@@ -17,6 +17,16 @@ interface ClientCredits {
   status: string;
 }
 
+interface CreditsSummary {
+  total_issued: number;
+  total_used: number;
+  total_credits: number;
+  total_purchased: number;
+  active_clients: number;
+  near_limit_count: number;
+  near_limit_names: string;
+}
+
 interface LedgerEntry {
   id: string;
   client: string;
@@ -26,11 +36,18 @@ interface LedgerEntry {
   date: string;
 }
 
+interface MonthlyUsage {
+  month: string;
+  usage: number;
+}
+
 // ─── Data fetching ───────────────────────────────────────────────────────────
 
 function useCreditsData() {
   const [clients, setClients] = useState<ClientCredits[]>([]);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [summary, setSummary] = useState<CreditsSummary | null>(null);
+  const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,12 +62,14 @@ function useCreditsData() {
 
         if (creditsRes.ok) {
           const creditsData = await creditsRes.json();
+          setSummary(creditsData.summary ?? null);
+          setMonthlyUsage(creditsData.monthly_usage || []);
           setLedger((creditsData.ledger || []).map((l: Record<string, unknown>) => ({
             id: l.id as string || "",
-            client: l.client_id as string || "Unknown",
+            client: (l.client_name as string) || (l.client_id as string) || "Unknown",
             type: l.type as string || "deduction",
             amount: l.amount as number || 0,
-            note: `Transaction ${l.id}`,
+            note: (l.note as string) || `Transaction ${l.id}`,
             date: l.created_at ? new Date(l.created_at as string).toLocaleString() : "",
           })));
         }
@@ -78,7 +97,7 @@ function useCreditsData() {
     fetchData();
   }, []);
 
-  return { clients, ledger, loading, error };
+  return { clients, ledger, monthlyUsage, summary, loading, error };
 }
 
 const typeColor: Record<string, string> = {
@@ -89,7 +108,7 @@ const planVariant = (p: string) => p === "Growth" ? "growth" : p === "Enterprise
 const statusVariant = (s: string) => s === "active" ? "active" : "suspended";
 
 export default function CreditsPage() {
-  const { clients, ledger: ledgerData, loading, error } = useCreditsData();
+  const { clients, ledger: ledgerData, monthlyUsage, summary, loading, error } = useCreditsData();
   const [filterClient, setFilterClient] = useState("All");
   const [adjustClient, setAdjustClient] = useState("ZEP-RE");
   const [adjustAmt, setAdjustAmt]       = useState("");
@@ -133,11 +152,11 @@ export default function CreditsPage() {
     }
   }
 
-  const totalIssued = clients.reduce((sum, c) => sum + c.limit, 0);
-  const totalConsumed = clients.reduce((sum, c) => sum + c.used, 0);
-  const totalRemaining = clients.reduce((sum, c) => sum + c.remaining, 0);
-  const nearLimitCount = clients.filter(c => c.pct >= 90).length;
-  const nearLimitNames = clients.filter(c => c.pct >= 90).map(c => c.name).join(" · ");
+  const totalIssued = summary?.total_issued ?? 0;
+  const totalConsumed = summary?.total_used ?? 0;
+  const totalRemaining = summary?.total_credits ?? 0;
+  const nearLimitCount = summary?.near_limit_count ?? 0;
+  const nearLimitNames = summary?.near_limit_names ?? "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--color-background-tertiary)" }}>
@@ -148,12 +167,27 @@ export default function CreditsPage() {
       />
 
       {/* Stats */}
-      <div style={{ padding: "1rem 1.5rem .75rem", display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
-        <StatCard label="Total credits issued" value={totalIssued.toLocaleString()} sub="This billing cycle" />
-        <StatCard label="Credits consumed" value={totalConsumed.toLocaleString()} sub={`${totalIssued > 0 ? Math.round((totalConsumed / totalIssued) * 100) : 0}% utilisation`} />
-        <StatCard label="Credits remaining" value={totalRemaining.toLocaleString()} sub="Across all clients" />
-        <StatCard label="Clients near limit" value={nearLimitCount.toString()} sub={nearLimitNames || "None"} valColor={nearLimitCount > 0 ? DT_AMBER : undefined} />
-      </div>
+      {loading ? (
+        <div style={{ padding: "1rem 1.5rem .75rem", display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
+          {[1,2,3,4].map(i => (
+            <div key={i} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: ".75rem 1rem", opacity: 0.5 }}>
+              <div style={{ fontSize: 11, marginBottom: 3 }}>—</div>
+              <div style={{ fontSize: 20, fontWeight: 500 }}>—</div>
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div style={{ padding: "1rem 1.5rem .75rem", color: DT_RED, fontSize: 13 }}>
+          Failed to load credit data
+        </div>
+      ) : (
+        <div style={{ padding: "1rem 1.5rem .75rem", display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
+          <StatCard label="Total credits issued" value={totalIssued.toLocaleString()} sub="All time" />
+          <StatCard label="Credits consumed" value={totalConsumed.toLocaleString()} sub={`${totalIssued > 0 ? Math.round((totalConsumed / totalIssued) * 100) : 0}% utilisation`} />
+          <StatCard label="Credits remaining" value={totalRemaining.toLocaleString()} sub="Across all clients" />
+          <StatCard label="Clients near limit" value={nearLimitCount.toString()} sub={nearLimitNames || "None"} valColor={nearLimitCount > 0 ? DT_AMBER : undefined} />
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: "auto", padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: 14 }}>
 
@@ -194,25 +228,24 @@ export default function CreditsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: 14 }}>
 
           {/* Monthly usage chart */}
-          <Card>
-            <CardHead title="Monthly credit usage" />
-            <div style={{ padding: "1rem", height: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { month: "Jan", zepre: 4200, innovex: 1800, keguild: 900 },
-                  { month: "Feb", zepre: 3800, innovex: 2100, keguild: 750 },
-                  { month: "Mar", zepre: 4500, innovex: 2400, keguild: 820 },
-                  { month: "Apr", zepre: 4100, innovex: 1950, keguild: 680 },
-                ]} barCategoryGap="30%" barGap={2}>
-                  <CartesianGrid vertical={false} stroke="var(--color-border-tertiary)" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: "var(--color-text-tertiary)" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "var(--color-text-tertiary)" }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 6 }} />
-                  <Bar dataKey="zepre"   name="ZEP-RE"  fill={DT_CYAN}  radius={[2,2,0,0]} maxBarSize={14} />
-                  <Bar dataKey="innovex" name="Innovex" fill={DT_GREEN} radius={[2,2,0,0]} maxBarSize={14} />
-                  <Bar dataKey="keguild" name="KE Guild" fill={DT_AMBER} radius={[2,2,0,0]} maxBarSize={14} />
-                </BarChart>
-              </ResponsiveContainer>
+          <Card style={{ display: "flex", flexDirection: "column" }}>
+            <CardHead title="Monthly credit usage (rolling 12 months)" />
+            <div style={{ flex: 1, minHeight: 0, padding: "0 1rem 1rem" }}>
+              {monthlyUsage.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyUsage} barCategoryGap="30%">
+                    <CartesianGrid vertical={false} stroke="var(--color-border-tertiary)" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: "var(--color-text-tertiary)" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: "var(--color-text-tertiary)" }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ fontSize: 11, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 6 }} />
+                    <Bar dataKey="usage" name="Credits used" fill={DT_CYAN} radius={[2,2,0,0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)", fontSize: 13 }}>
+                  No credit usage data yet
+                </div>
+              )}
             </div>
           </Card>
 

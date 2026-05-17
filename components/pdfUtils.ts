@@ -348,7 +348,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
     const realityDefenderWeight = Math.round((result.fusion.weights?.realityDefender || 0) * 100);
     doc.text(`FakeCatcher weight: ${fakeCatcherWeight}%`, margin, (y += 6));
     doc.text(
-      `Reality Defender weight: ${realityDefenderWeight}%`,
+      `Deeptrack Scan weight: ${realityDefenderWeight}%`,
       margin,
       (y += 6),
       { maxWidth: 170 }
@@ -373,7 +373,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
     const rdStatus = result.realityDefender?.status || "N/A";
     const rdScore = typeof result.realityDefender?.score === "number" ? `${(result.realityDefender.score * 100).toFixed(1)}%` : "N/A";
     doc.setFont("helvetica", "bold");
-    doc.text("Reality Defender", margin, (y += 8));
+    doc.text("Deeptrack Scan", margin, (y += 8));
     doc.setFont("helvetica", "normal");
     doc.text(`Status: ${rdStatus}`, margin, (y += 6), {
       maxWidth: 170,

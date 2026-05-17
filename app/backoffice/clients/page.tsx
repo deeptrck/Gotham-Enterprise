@@ -14,7 +14,8 @@ interface Client {
   status: "active" | "suspended" | "trial_expired";
   email: string;
   credits: number;
-  creditLimit: number;
+  creditsUsed: number;
+  totalIssued: number;
   apiKeys: number;
   scans: number;
   created: string;
@@ -43,7 +44,8 @@ function useClientsData() {
             status: "active" as const,
             email: c.email as string || "",
             credits: c.credits_remaining as number || 0,
-            creditLimit: c.total as number || 0,
+            creditsUsed: c.used as number || 0,
+            totalIssued: c.total as number || 0,
             apiKeys: 0,
             scans: c.calls as number || 0,
             created: c.created_at ? new Date(c.created_at as string).toISOString().split("T")[0] : "",
@@ -86,7 +88,7 @@ export default function ClientsPage() {
       setModalEmail(editClient.email);
       setModalSlug(editClient.slug);
       setModalPlan(editClient.plan);
-      setModalCreditLimit(String(editClient.creditLimit));
+      setModalCreditLimit(String(editClient.totalIssued));
     } else {
       setModalName("");
       setModalEmail("");
@@ -164,13 +166,23 @@ export default function ClientsPage() {
     try {
       const method = editClient ? "PUT" : "POST";
       const url = editClient ? `/api/admin/clients?id=${editClient.id}` : "/api/admin/clients";
-      const body = editClient ? { ...clientData, status: editClient.status } : clientData;
+      // Map totalIssued to credits for the API (total issued allocation)
+      const { totalIssued, ...rest } = clientData;
+      const apiBody: Record<string, unknown> = { ...rest };
+      if (totalIssued !== undefined) {
+        apiBody.credits = editClient
+          ? totalIssued - (editClient.credits + editClient.creditsUsed)
+          : totalIssued;
+      }
+      if (editClient) {
+        apiBody.status = editClient.status;
+      }
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body: JSON.stringify(apiBody),
       });
       if (res.ok) {
         setShowAdd(false);
@@ -228,12 +240,12 @@ export default function ClientsPage() {
                       <div style={{ width: 40, height: 4, borderRadius: 2, background: "var(--color-border-tertiary)", overflow: "hidden" }}>
                         <div style={{
                           height: "100%", borderRadius: 2,
-                          width: `${Math.round((1 - c.credits / c.creditLimit) * 100)}%`,
-                          background: c.credits / c.creditLimit < 0.15 ? DT_RED : c.credits / c.creditLimit < 0.3 ? DT_AMBER : DT_GREEN,
+                          width: `${Math.round((c.creditsUsed / c.totalIssued) * 100)}%`,
+                          background: c.credits / c.totalIssued < 0.15 ? DT_RED : c.credits / c.totalIssued < 0.3 ? DT_AMBER : DT_GREEN,
                         }} />
                       </div>
                       <span style={{ fontSize: 11, color: "var(--color-text-primary)" }}>{c.credits.toLocaleString()}</span>
-                      <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>/ {c.creditLimit.toLocaleString()}</span>
+                      <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>/ {c.totalIssued.toLocaleString()}</span>
                     </div>
                   </Td>
                   <Td style={{ color: "var(--color-text-secondary)", textAlign: "center" }}>{c.apiKeys}</Td>
@@ -281,7 +293,7 @@ export default function ClientsPage() {
                 </Select>
               </div>
               <div>
-                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Monthly credit limit</label>
+                <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Total credits issued</label>
                 <Input placeholder="e.g. 1000" value={modalCreditLimit} onChange={setModalCreditLimit} style={{ width: "100%" }} />
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -290,7 +302,7 @@ export default function ClientsPage() {
                   email: modalEmail,
                   slug: modalSlug,
                   plan: modalPlan as Client["plan"],
-                  creditLimit: parseInt(modalCreditLimit) || 0,
+                  totalIssued: parseInt(modalCreditLimit) || 0,
                 })}>
                   {editClient ? "Save changes" : "Create client"}
                 </Btn>

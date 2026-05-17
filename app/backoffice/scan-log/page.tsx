@@ -7,81 +7,9 @@ import {
   DT_CYAN, DT_GREEN, DT_RED, DT_AMBER, verdictColor,
 } from "../_components/ui";
 
-type Verdict = "authentic" | "deepfake" | "review" | "processing";
-type MediaType = "Video" | "Audio" | "Image" | "Document";
-
-interface Scan {
-  id: string;
-  client: string;
-  file: string;
-  type: MediaType;
-  verdict: Verdict;
-  confidence: number;
-  credits: number;
-  processingMs: number;
-  reviewStatus: "none" | "pending" | "confirmed_fp" | "confirmed_fn" | "dismissed";
-  time: string;
-  date: string;
-  apiKey: string;
-  rdScore: number;
-  dtScore: number;
-  ensemble: number;
-  fileSize: string;
-  duration?: string;
-  codec?: string;
-}
-
-// ─── Data fetching ───────────────────────────────────────────────────────────
-
-function useScanData() {
-  const [scans, setScans] = useState<Scan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
-
-  const fetchScans = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/scans?limit=100", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        const transformed = (data.scans || []).map((s: Record<string, unknown>) => ({
-          id: s.id as string || "",
-          client: s.client as string || "Unknown",
-          file: s.id as string || "",
-          type: (s.type as string || "image").replace(/^(video|audio|image)$/i, (m) => 
-            m.charAt(0).toUpperCase() + m.slice(1).toLowerCase()
-          ) as MediaType,
-          verdict: ((s.verdict as string) || "review") as Verdict,
-          confidence: s.confidence as number || 0,
-          credits: 1,
-          processingMs: (s.processing_ms as number) || 0,
-          reviewStatus: "none" as const,
-          time: s.time as string || "",
-          date: s.created_at ? new Date(s.created_at as string).toISOString().split("T")[0] : "",
-          apiKey: "",
-          rdScore: s.confidence as number || 0,
-          dtScore: s.confidence as number || 0,
-          ensemble: s.confidence as number || 0,
-          fileSize: "",
-        }));
-        setScans(transformed);
-        setTotal(data.pagination?.total || 0);
-      }
-    } catch (err) {
-      console.error("Error fetching scans:", err);
-      setError("Failed to load scans");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchScans();
-  }, []);
-
-  return { scans, loading, error, total, refetch: fetchScans };
-}
+import { formatDateHuman } from "@/lib/utils";
+import { MediaType, Scan } from "@/app/backoffice/scan-log/scan";
+import { useScanData } from "@/app/backoffice/scan-log/useScanData";
 
 const verdictToVariant = (v: string) => {
   if (v === "authentic") return "auth";
@@ -91,10 +19,8 @@ const verdictToVariant = (v: string) => {
 };
 
 const reviewBadge: Record<string, { label: string; color: string }> = {
-  none:         { label: "—",           color: "var(--color-text-tertiary)" },
   pending:      { label: "Pending",     color: DT_AMBER },
-  confirmed_fp: { label: "FP ✓",        color: DT_RED   },
-  confirmed_fn: { label: "FN ✓",        color: DT_RED   },
+  confirmed:    { label: "Resolved ✓",  color: "var(--color-text-tertiary)" },
   dismissed:    { label: "Dismissed",   color: "var(--color-text-tertiary)" },
 };
 
@@ -103,7 +29,7 @@ const mediaIcon: Record<MediaType, string> = {
 };
 
 export default function ScanLogPage() {
-  const { scans, loading, error, total, refetch } = useScanData();
+    const { scans, loading, error, total, summary, refetch } = useScanData();
   const [search, setSearch] = useState("");
   const [filterClient, setFilterClient] = useState("All");
   const [filterType, setFilterType] = useState("All");
@@ -116,16 +42,19 @@ export default function ScanLogPage() {
   const filtered = useMemo(() => {
     return scans.filter((s) => {
       if (filterClient !== "All" && s.client !== filterClient) return false;
-      if (filterType !== "All" && s.type !== filterType) return false;
+      if (filterType !== "All" && s.type !== filterType.toLowerCase()) return false;
       if (filterVerdict !== "All" && s.verdict !== filterVerdict) return false;
-      if (filterReview !== "All" && s.reviewStatus !== filterReview) return false;
+      if (filterReview !== "All") {
+        const filterVal = filterReview === "null" ? null : filterReview;
+        if (s.reviewStatus !== filterVal) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         if (!s.id.includes(q) && !s.client.toLowerCase().includes(q) && !s.file.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [search, filterClient, filterType, filterVerdict, filterReview]);
+  }, [scans,search, filterClient, filterType, filterVerdict, filterReview]);
 
   const pages = Math.ceil(filtered.length / PER_PAGE);
   const rows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -171,9 +100,9 @@ export default function ScanLogPage() {
   }
 
   const totalScans = total;
-  const deepfakes = scans.filter(s => s.verdict === "deepfake").length;
-  const pendingReview = scans.filter(s => s.reviewStatus === "pending").length;
-  const avgConfidence = scans.length > 0 ? Math.round(scans.reduce((sum, s) => sum + s.confidence, 0) / scans.length * 100) / 100 : 0;
+  const deepfakes = summary.total_deepfakes;
+  const pendingReview = summary.total_pending_review;
+  const avgConfidence = summary.avg_confidence;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--color-background-tertiary)" }}>
@@ -190,10 +119,10 @@ export default function ScanLogPage() {
 
       {/* Stats row */}
       <div style={{ padding: "1rem 1.5rem .75rem", display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
-        <StatCard label="Total scans" value={totalScans.toLocaleString()} sub="+18% this month" subColor="#059669" />
-        <StatCard label="Deepfakes" value={deepfakes.toString()} sub={`${totalScans > 0 ? Math.round((deepfakes / totalScans) * 1000) / 10 : 0}% detection rate`} />
-        <StatCard label="Pending review" value={pendingReview.toString()} sub="FP: 9 · FN: 5" valColor={pendingReview > 0 ? DT_AMBER : undefined} />
-        <StatCard label="Avg confidence" value={`${avgConfidence}%`} sub="+2.1pts vs last wk" subColor="#059669" />
+        <StatCard label="Total scans" value={totalScans.toLocaleString()} />
+        <StatCard label="Deepfakes" value={deepfakes.toString()} />
+        <StatCard label="Pending review" value={pendingReview.toString()} valColor={pendingReview > 0 ? DT_AMBER : undefined} />
+        <StatCard label="Avg confidence" value={`${avgConfidence}%`} />
       </div>
 
       {/* Filters */}
@@ -211,10 +140,9 @@ export default function ScanLogPage() {
         <Select value={filterReview} onChange={(v) => { setFilterReview(v); setPage(1); }}>
           {[
             ["All", "All"],
-            ["none", "No review"],
+            ["null", "No review"],
             ["pending", "Pending"],
-            ["confirmed_fp", "FP confirmed"],
-            ["confirmed_fn", "FN confirmed"],
+            ["confirmed", "Resolved"],
             ["dismissed", "Dismissed"],
           ].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
@@ -229,7 +157,7 @@ export default function ScanLogPage() {
         <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
           <Card style={{ overflow: "visible" }}>
             <Tbl>
-              <TblHead cols={["icon", "Scan ID", "Client", "File", "Type", "Verdict", "Confidence", "Review", "Time", "actions"]} />
+              <TblHead cols={["Scan ID", "Client",  "Type", "Verdict", "Confidence", "Review", "Time", "actions"]} />
               <tbody>
                 {rows.length === 0 ? (
                   <tr><td colSpan={10} style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 12 }}>No scans match filters</td></tr>
@@ -239,19 +167,20 @@ export default function ScanLogPage() {
                     style={{ cursor: "pointer", background: selected?.id === s.id ? "rgba(0,168,204,.05)" : "transparent" }}
                     onClick={() => setSelected(selected?.id === s.id ? null : s)}
                   >
-                    <Td style={{ width: 24, paddingRight: 0 }}>{mediaIcon[s.type]}</Td>
                     <Td style={{ fontFamily: "monospace", fontSize: 11, color: DT_CYAN }}>{s.id}</Td>
                     <Td style={{ fontWeight: 500 }}>{s.client}</Td>
-                    <Td style={{ color: "var(--color-text-secondary)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.file}</Td>
+                    {/* <Td style={{ color: "var(--color-text-secondary)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.file}</Td> */}
                     <Td style={{ color: "var(--color-text-secondary)" }}>{s.type}</Td>
                     <Td><Pill variant={verdictToVariant(s.verdict) as any}>{s.verdict}</Pill></Td>
                     <Td><ConfBar pct={s.confidence} color={verdictColor[s.verdict]} /></Td>
                     <Td>
-                      <span style={{ fontSize: 11, color: reviewBadge[s.reviewStatus].color }}>
-                        {reviewBadge[s.reviewStatus].label}
+                      <span style={{ fontSize: 11, color: reviewBadge[s.reviewStatus ?? ""]?.color ?? "var(--color-text-tertiary)" }}>
+                        {reviewBadge[s.reviewStatus ?? ""]?.label ?? "—"}
                       </span>
                     </Td>
-                    <Td style={{ color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>{s.date} {s.time}</Td>
+                    <Td style={{ color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                      {formatDateHuman(s.time)}
+                      </Td>
                     <Td><Btn variant="xs" onClick={() => setSelected(s)}>View</Btn></Td>
                   </tr>
                 ))}
@@ -319,7 +248,7 @@ export default function ScanLogPage() {
               <div>
                 <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 8 }}>Model scores</div>
                 {[
-                  { label: "Reality Defender", val: selected.rdScore },
+                  { label: "Deeptrack Scan", val: selected.rdScore },
                   { label: "Deeptrack model",  val: selected.dtScore },
                   { label: "Ensemble",          val: selected.ensemble },
                 ].map(({ label, val }) => (
@@ -341,7 +270,7 @@ export default function ScanLogPage() {
                   ["Credits used", String(selected.credits)],
                   ["Processing", `${selected.processingMs.toLocaleString()} ms`],
                   ["API key", selected.apiKey],
-                  ["Review status", reviewBadge[selected.reviewStatus].label],
+                  ["Review status", reviewBadge[selected.reviewStatus ?? ""]?.label ?? "—"],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                     <span style={{ color: "var(--color-text-tertiary)" }}>{k}</span>
@@ -353,7 +282,7 @@ export default function ScanLogPage() {
               {/* Actions */}
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <Btn variant="primary" style={{ width: "100%", textAlign: "center" }} onClick={() => window.open(`/backoffice/forensics?scanId=${selected.id}`, '_blank')}>Open forensics</Btn>
-                {selected.reviewStatus === "pending" && (
+                {(!selected.reviewStatus || selected.reviewStatus === "pending") && (
                   <>
                     <Btn variant="green" style={{ width: "100%", textAlign: "center" }} onClick={() => handleReviewAction(selected.id, "confirm_fp")}>Confirm FP</Btn>
                     <Btn variant="red" style={{ width: "100%", textAlign: "center" }} onClick={() => handleReviewAction(selected.id, "confirm_fn")}>Confirm FN</Btn>

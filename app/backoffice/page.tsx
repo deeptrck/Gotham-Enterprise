@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
+import { formatDateHuman } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,11 +72,12 @@ interface DashboardStats {
   active_clients: number;
   credits_used: number;
   avg_confidence: number;
+  pending_review: number;
 }
 
 // ─── Data fetching hooks ─────────────────────────────────────────────────────
 
-function useBackofficeData() {
+function useBackofficeData(duration: string) {
   const { user } = useUser();
   const [scans, setScans] = useState<Scan[]>([]);
   const [clients, setClients] = useState<ClientCredit[]>([]);
@@ -89,8 +91,18 @@ function useBackofficeData() {
     active_clients: 0,
     credits_used: 0,
     avg_confidence: 0,
+    pending_review: 0,
   });
+  const [detectionScans, setDetectionScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    const days = duration === "Last 7 days" ? 7 : duration === "Last 90 days" ? 90 : 30;
+    const from = new Date(now.getTime() - days * 86400000).toISOString();
+    const to = now.toISOString();
+    return { from, to };
+  }, [duration]);
 
   useEffect(() => {
     async function fetchData() {
@@ -99,13 +111,15 @@ function useBackofficeData() {
       setLoading(true);
 
       try {
-        const [scansRes, clientsRes, fpRes, alertsRes, keysRes, webhooksRes] = await Promise.all([
-          fetch("/api/admin/scans?limit=20", { credentials: "include" }),
+        const [scansRes, clientsRes, fpRes, alertsRes, keysRes, webhooksRes, statsRes, detRes] = await Promise.all([
+          fetch("/api/admin/scans?limit=23", { credentials: "include" }),
           fetch("/api/admin/clients", { credentials: "include" }),
           fetch("/api/admin/fp-queue?limit=10", { credentials: "include" }),
           fetch("/api/admin/alerts", { credentials: "include" }),
           fetch("/api/admin/api-keys", { credentials: "include" }),
           fetch("/api/admin/webhooks", { credentials: "include" }),
+          fetch(`/api/admin/stats?from=${dateRange.from}&to=${dateRange.to}`, { credentials: "include" }),
+          fetch(`/api/admin/scans?limit=5000&from=${dateRange.from}&to=${dateRange.to}`, { credentials: "include" }),
         ]);
 
         if (scansRes.ok) {
@@ -178,15 +192,46 @@ function useBackofficeData() {
           })) || []);
         }
 
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setStats({
+            scans_today: 0,
+            scans_total: statsData.scans_total ?? 0,
+            active_clients: statsData.active_clients ?? 0,
+            credits_used: statsData.credits_used ?? 0,
+            avg_confidence: statsData.avg_confidence ?? 0,
+            pending_review: statsData.pending_review ?? 0,
+          });
+        }
+
+        if (detRes.ok) {
+          const detData = await detRes.json();
+          setDetectionScans(detData.scans?.map((s: Record<string, unknown>) => ({
+            id: s.id as string,
+            client: s.client as string,
+            type: s.type as string,
+            verdict: s.verdict as Verdict,
+            confidence: s.confidence as number,
+            time: s.time as string,
+          })) || []);
+        }
+
       } finally {
         setLoading(false);
       }
     }
 
     fetchData();
-  }, [user]);
 
-  return { scans, clients, fpItems, alerts, apiKeys, webhooks, stats, loading, setScans, setClients, setApiKeys, setWebhooks };
+    // Auto-refresh every 60 seconds
+    const pollInterval = setInterval(() => {
+      fetchData();
+    }, 60000);
+
+    return () => clearInterval(pollInterval);
+  }, [user, dateRange]);
+
+  return { scans, detectionScans, clients, fpItems, alerts, apiKeys, webhooks, stats, loading, setScans, setClients, setApiKeys, setWebhooks, setStats };
 }
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
@@ -507,11 +552,11 @@ function NewClientModalContent({
 
 function MetricsRow({ stats }: { stats: DashboardStats }) {
   const cards = [
-    { label: "Total scans", value: stats.scans_total.toLocaleString(), sub: "+18% vs last month", subColor: DT_GREEN },
-    { label: "Active clients", value: stats.active_clients.toString(), sub: "Across all plans", subColor: "var(--color-text-secondary)" },
-    { label: "Credits used", value: stats.credits_used.toLocaleString(), sub: "This period", subColor: "var(--color-text-secondary)" },
-    { label: "Pending review", value: "14", sub: "FP: 9 · FN: 5", subColor: "var(--color-text-secondary)", valColor: DT_AMBER },
-    { label: "Avg confidence", value: `${stats.avg_confidence}%`, sub: "+2.1pts", subColor: DT_GREEN },
+    { label: "Total scans", value: stats.scans_total.toLocaleString()},
+    { label: "Active clients", value: stats.active_clients.toString()},
+    { label: "Credits used", value: stats.credits_used.toLocaleString()},
+    { label: "Pending review", value: stats.pending_review.toString()},
+    { label: "Avg confidence", value: `${stats.avg_confidence}%` },
   ];
 
   return (
@@ -526,23 +571,31 @@ function MetricsRow({ stats }: { stats: DashboardStats }) {
           }}
         >
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3 }}>{c.label}</div>
-          <div style={{ fontSize: 20, fontWeight: 500, color: c.valColor ?? "var(--color-text-primary)" }}>{c.value}</div>
-          <div style={{ fontSize: 11, marginTop: 2, color: c.subColor }}>{c.sub}</div>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)" }}>{c.value}</div>
         </div>
       ))}
     </div>
   );
 }
 
-function ScanLog({ scans }: { scans: Scan[] }) {
+function ScanLog({
+  scans,
+  duration,
+}: {
+  scans: Scan[];
+  duration: string;
+}) {
   const router = useRouter();
   const [searchId, setSearchId] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [verdictFilter, setVerdictFilter] = useState("All");
-  
+
   const filtered = useMemo(() => {
-    return scans.filter(s => {
-      const matchesSearch = searchId === "" || s.id.toLowerCase().includes(searchId.toLowerCase()) || s.client.toLowerCase().includes(searchId.toLowerCase());
+    return scans.filter((s) => {
+      const matchesSearch =
+        searchId === "" ||
+        s.id.toLowerCase().includes(searchId.toLowerCase()) ||
+        s.client.toLowerCase().includes(searchId.toLowerCase());
       const matchesType = typeFilter === "All" || s.type === typeFilter;
       const matchesVerdict = verdictFilter === "All" || s.verdict === verdictFilter;
       return matchesSearch && matchesType && matchesVerdict;
@@ -572,7 +625,7 @@ function ScanLog({ scans }: { scans: Scan[] }) {
               }}
             />
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
-              <option value="All">All types</option><option value="Video">Video</option><option value="Audio">Audio</option><option value="Image">Image</option><option value="Doc">Doc</option>
+              <option value="All">All types</option><option value="video">Video</option><option value="audio">Audio</option><option value="image">Image</option>
             </select>
             <select value={verdictFilter} onChange={e => setVerdictFilter(e.target.value)} style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
               <option value="All">All verdicts</option><option value="authentic">Authentic</option><option value="deepfake">Deepfake</option><option value="review">Review</option>
@@ -606,7 +659,9 @@ function ScanLog({ scans }: { scans: Scan[] }) {
                 <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", verticalAlign: "middle" }}>
                   <ConfBar pct={s.confidence} color={verdictColor[s.verdict]} />
                 </td>
-                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", verticalAlign: "middle", color: "var(--color-text-secondary)", fontSize: 11 }}>{s.time}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", verticalAlign: "middle", color: "var(--color-text-secondary)", fontSize: 11 }}>
+                  {formatDateHuman(s.time)}
+                  </td>
                 <td style={{ padding: "4px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", verticalAlign: "middle" }}>
                   <Btn
                     variant="xs"
@@ -741,9 +796,7 @@ function FPQueue({ items, onRefresh }: { items: FPItem[]; onRefresh: () => void 
         title="False positive / negative queue"
         right={
           <>
-            <select style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
-              <option>All types</option><option>False positives</option><option>False negatives</option>
-            </select>
+            
             <span style={{ background: "#FAECE7", color: "#712B13", fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 99 }}>
               {fpCount + fnCount} pending
             </span>
@@ -827,18 +880,30 @@ function FPQueue({ items, onRefresh }: { items: FPItem[]; onRefresh: () => void 
 function DetectionByType({ scans }: { scans: Scan[] }) {
   const typeStats = scans.reduce((acc, s) => {
     const t = s.type || "Unknown";
-    if (!acc[t]) acc[t] = { scans: 0, fakes: 0 };
+    if (!acc[t]) acc[t] = { scans: 0, fakes: 0, confTotal: 0 };
     acc[t].scans++;
+    acc[t].confTotal += s.confidence;
     if (s.verdict === "deepfake") acc[t].fakes++;
     return acc;
-  }, {} as Record<string, { scans: number; fakes: number }>);
+  }, {} as Record<string, { scans: number; fakes: number; confTotal: number }>);
 
-  const rows = [
-    { type: "Video", scans: "1,840", fakes: "148", rate: "8.0%", rateVar: "fake" as const, conf: 94 },
-    { type: "Audio", scans: "1,230", fakes: "92", rate: "7.5%", rateVar: "rev" as const, conf: 89 },
-    { type: "Image", scans: "980", fakes: "44", rate: "4.5%", rateVar: "auth" as const, conf: 93 },
-    { type: "Document", scans: "771", fakes: "28", rate: "3.6%", rateVar: "auth" as const, conf: 87 },
-  ];
+  const rows = Object.entries(typeStats)
+    .map(([type, stats]) => {
+      const rate = stats.scans > 0 ? (stats.fakes / stats.scans) * 100 : 0;
+      const avgConf = stats.scans > 0 ? Math.round(stats.confTotal / stats.scans) : 0;
+      return {
+        type: type.charAt(0).toUpperCase() + type.slice(1),
+        scans: stats.scans.toLocaleString(),
+        fakes: stats.fakes.toLocaleString(),
+        rate: `${rate.toFixed(1)}%`,
+        conf: avgConf,
+      };
+    })
+    .sort((a, b) => {
+      const aNum = parseInt(a.scans.replace(/\D/g, ""), 10);
+      const bNum = parseInt(b.scans.replace(/\D/g, ""), 10);
+      return bNum - aNum;
+    });
 
   return (
     <Card>
@@ -850,17 +915,25 @@ function DetectionByType({ scans }: { scans: Scan[] }) {
         </colgroup>
         <TblHead cols={["Type", "Scans", "Fakes", "Rate", "Avg conf"]} />
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.type}>
-              <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.type}</td>
-              <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.scans}</td>
-              <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.fakes}</td>
-              <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}><Pill variant={r.rateVar}>{r.rate}</Pill></td>
-              <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <ConfBar pct={r.conf} color={DT_GREEN} />
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={5} style={{ padding: "16px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 12 }}>
+                No scan data available
               </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((r) => (
+              <tr key={r.type}>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.type}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.scans}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.fakes}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)" }}>{r.rate}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                  <ConfBar pct={r.conf} color={DT_GREEN} />
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </Tbl>
     </Card>
@@ -1080,9 +1153,10 @@ function WebhooksPanel({ webhooks, setWebhooks }: { webhooks: Webhook[]; setWebh
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function BackofficePage() {
-  const { scans, fpItems, clients, alerts, apiKeys, webhooks, stats, setScans, setClients, setApiKeys, setWebhooks } = useBackofficeData();
-  const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const [duration, setDuration] = useState("Last 30 days");
+  const { scans, detectionScans, fpItems, clients, alerts, apiKeys, webhooks, stats, setScans, setClients, setApiKeys, setWebhooks, setStats } = useBackofficeData(duration);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
   function exportToCSV() {
     const csvData = scans.map(s => ({
@@ -1123,18 +1197,15 @@ export default function BackofficePage() {
         <div>
           <div style={{ fontSize: 17, fontWeight: 500, color: "var(--color-text-primary)" }}>Platform overview</div>
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-            {today} · All clients · Last 30 days
+            {today} {duration}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ background: "#FAECE7", color: "#712B13", fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 99 }}>
             {fpItems.length} items need review
           </span>
-          <select style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
+          <select value={duration} onChange={e => setDuration(e.target.value)} style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
             <option>Last 30 days</option><option>Last 7 days</option><option>Last 90 days</option>
-          </select>
-          <select style={{ fontSize: 12, padding: "4px 8px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", fontFamily: "inherit" }}>
-            <option>All clients</option><option>ZEP-RE</option><option>Innovex Solutions</option><option>KE Guild</option>
           </select>
           <Btn variant="default" onClick={exportToCSV}>Export CSV</Btn>
           <Btn variant="primary" onClick={() => setShowNewClientModal(true)}>+ New client</Btn>
@@ -1146,7 +1217,7 @@ export default function BackofficePage() {
 
       {/* Row 1: Scan log + right column */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-        <ScanLog scans={scans} />
+        <ScanLog scans={scans} duration={duration}/>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <CreditUsage clients={clients} />
           <MiniChart scans={scans} />
@@ -1157,7 +1228,7 @@ export default function BackofficePage() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
         <FPQueue items={fpItems} onRefresh={() => {}} />
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <DetectionByType scans={scans} />
+          <DetectionByType scans={detectionScans} />
           <SystemAlerts alerts={alerts} />
         </div>
       </div>

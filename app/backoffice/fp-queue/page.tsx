@@ -330,7 +330,7 @@ export default function FpQueuePage() {
               {/* Model scores */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 8 }}>Model scores</div>
-                {[["Reality Defender", selected.rdScore], ["Deeptrack", selected.dtScore], ["Ensemble", selected.confidence]].map(([l, v]) => (
+                {[["Deeptrack Scan", selected.rdScore], ["Deeptrack", selected.dtScore], ["Ensemble", selected.confidence]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
                     <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{l}</span>
                     <ConfBar pct={v as number} color={selected.type === "fp" ? DT_RED : DT_AMBER} />

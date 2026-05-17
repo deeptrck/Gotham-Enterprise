@@ -4,11 +4,22 @@
  * This ensures server-side `auth()` can detect clerk middleware usage.
  * See: https://clerk.com/docs
  */
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkClient, clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { logUserAccess } from "@/lib/logUserAccess";
+import { isEmailAllowlisted } from "@/lib/adminAccess";
 
-const isAdminDashboardRoute = createRouteMatcher(["/admin/dashboard(.*)"]);
+const isAdminRoute = createRouteMatcher([
+  "/admin",
+  "/admin/(.*)",
+  "/api/admin",
+  "/api/admin/(.*)",
+]);
+const isBackOfficeRoute = createRouteMatcher([
+  "/backoffice",
+  "/backoffice/(.*)",
+]);
+
 // Routes to skip for access logging (static assets, etc.)
 const skipAccessLogging = createRouteMatcher([
   "/_next/static/:path*",
@@ -41,11 +52,18 @@ export default clerkMiddleware(async (auth, req) => {
     */
   }
 
-  // Admin dashboard protection
-  if (!isAdminDashboardRoute(req)) return;
+  if (isBackOfficeRoute(req) || isAdminRoute(req)) {
+    if (!userId) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
 
-  if (!userId) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    const client = await clerkClient();
+    const user = await client.users.getUser(userId);
+    const emails = user.emailAddresses.map((e) => e.emailAddress.toLowerCase());
+
+    if (!isEmailAllowlisted(emails)) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
   }
 });
 

@@ -13,6 +13,10 @@ export interface IVerificationResult extends Document {
   url?: string;    
   description?: string;
   features?: string[];
+  requestPath?: string;
+  method?: string;
+  reviewStatus?: "pending" | "confirmed" | "dismissed";
+  feedbackType?: "fp" | "fn";
   fcAnalysis?: {
     label?: string;
     confidence?: number;
@@ -49,11 +53,21 @@ const verificationResultSchema = new Schema<IVerificationResult>(
     url: { type: String },
     description: { type: String },
     features: [{ type: String }],
+    requestPath: { type: String },
+    method: { type: String },
     fcAnalysis: {
       label: { type: String },
       confidence: { type: Number },
       fake_prob: { type: Number },
       analyzedAt: { type: String },
+    },
+    reviewStatus: {
+      type: String,
+      enum: ["pending", "confirmed", "dismissed"],
+    },
+    feedbackType: {
+      type: String,
+      enum: ["fp", "fn"],
     },
     rdAnalysis: {
       requestId: { type: String },
@@ -72,7 +86,9 @@ const verificationResultSchema = new Schema<IVerificationResult>(
 );
 
 // Index for faster queries
+verificationResultSchema.index({ createdAt: -1 });
 verificationResultSchema.index({ userId: 1, createdAt: -1 });
+verificationResultSchema.index({ confidenceScore: 1, reviewStatus: 1 });
 
 export const VerificationResult =
   mongoose.models?.VerificationResult || mongoose.model("VerificationResult", verificationResultSchema);

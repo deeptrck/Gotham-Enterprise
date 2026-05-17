@@ -6,6 +6,8 @@ export interface IUser extends Document {
   fullName: string;
   imageUrl?: string;
   credits: number;
+  creditsUsed?: number;
+  scanCount?: number;
   plan: "trial" | "starter" | "growth" | "enterprise";
   createdAt: Date;
   updatedAt: Date;
@@ -18,6 +20,8 @@ const userSchema = new Schema<IUser>(
     fullName: { type: String, required: true },
     imageUrl: { type: String },
     credits: { type: Number, default: 5 },
+    creditsUsed: { type: Number, default: 0 },
+    scanCount: { type: Number, default: 0 },
     plan: { type: String, enum: ["trial", "starter", "growth", "enterprise"], default: "trial" },
   },
   { timestamps: true }

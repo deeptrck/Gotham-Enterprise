@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
+import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobFakeCatcherAnalysis, setJobRdAnalysis } from "@/lib/fakecatcherStore";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
+import verifyMedia from "@/lib/realityDefender";
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -87,9 +88,9 @@ async function consumeUserCredit(userId: string) {
 
   const updatedUser = await User.findOneAndUpdate(
     { clerkId: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
-    { $inc: { credits: -CREDIT_COST_PER_SCAN } },
+    { $inc: { credits: -CREDIT_COST_PER_SCAN, creditsUsed: CREDIT_COST_PER_SCAN, scanCount: 1 } },
     { new: true }
-  ).select("credits");
+  ).select("credits creditsUsed scanCount");
 
   if (updatedUser) {
     return { ok: true as const };
@@ -107,7 +108,7 @@ async function refundUserCredit(userId: string) {
   await connectToDatabase();
   await User.updateOne(
     { clerkId: userId },
-    { $inc: { credits: CREDIT_COST_PER_SCAN } }
+    { $inc: { credits: CREDIT_COST_PER_SCAN, creditsUsed: -CREDIT_COST_PER_SCAN, scanCount: -1 } }
   );
 }
 
@@ -405,11 +406,16 @@ export async function POST(req: NextRequest) {
     }
     chargedUserId = userId;
 
-    let rdOutcome = {
+    let rdOutcome: {
+      requestId?: string;
+      status: string;
+      score: number;
+      models: Array<{ name: string; status: string; score: number }>;
+      error?: string;
+    } = {
       status: "DISABLED",
       score: 0,
-      models: [] as Array<{ name: string; status: string; score: number }>,
-      error: "Reality Defender is disabled",
+      models: [],
     };
 
     let fcOutcome: { label?: string; confidence?: number; fake_prob?: number } | undefined;
@@ -447,7 +453,34 @@ export async function POST(req: NextRequest) {
           };
         } catch (e) {
           console.warn("Failed to parse FakeCatcher image result:", e);
+          rdOutcome.error = "Failed to parse model response";
         }
+
+        try {
+          const rdBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+          const rdResponse = await verifyMedia({ fileBuffer: rdBuffer, fileType: "image" });
+
+          rdOutcome = {
+            requestId: rdResponse.requestId,
+            status: rdResponse.status,
+            score: rdResponse.score,
+            models: rdResponse.models.map((m) => ({
+              name: m.name,
+              status: m.status,
+              score: m.score,
+            })),
+          };
+        } catch (rdError) {
+          console.error("Reality Defender scan failed:", rdError);
+          rdOutcome = {
+            status: "ERROR",
+            score: 0,
+            models: [],
+            error: rdError instanceof Error ? rdError.message : String(rdError),
+          };
+        }
+      } else {
+        rdOutcome.error = parseBackendError(imageResult.body);
       }
 
       const scanId = `fc-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -469,9 +502,19 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Determine final status for MongoDB
+      setJobRdAnalysis(scanId, {
+        requestId: rdOutcome.requestId,
+        status: rdOutcome.status,
+        score: rdOutcome.score,
+        models: rdOutcome.models,
+        analyzedAt: new Date().toISOString(),
+        error: rdOutcome.error,
+      });
+
       const finalStatus = fcOutcome ? (fcOutcome.label === "FAKE" ? "DEEPFAKE" : fcOutcome.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS") : "UNCERTAIN";
       const finalConfidence = fcOutcome?.confidence ? Math.round(fcOutcome.confidence * 10) / 10 : 50;
+      const modelsUsed = ["FakeCatcher", ...(rdOutcome.models.length ? ["RealityDefender"] : [])];
+      const rdUsed = rdOutcome.status !== "DISABLED" && rdOutcome.status !== "ERROR";
       
       // Save to MongoDB for dashboard
       try {
@@ -483,7 +526,17 @@ export async function POST(req: NextRequest) {
           fileType,
           status: (finalStatus === "UNCERTAIN" ? "SUSPICIOUS" : finalStatus) as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
           confidenceScore: finalConfidence,
-          modelsUsed: ["FakeCatcher"],
+          modelsUsed,
+          requestPath: req.nextUrl.pathname,
+          method: "POST",
+          rdAnalysis: {
+            requestId: rdOutcome.requestId,
+            status: rdOutcome.status,
+            score: rdOutcome.score,
+            models: rdOutcome.models,
+            analyzedAt: new Date().toISOString(),
+            error: rdOutcome.error,
+          },
           imageUrl: imageData || "",
           fcAnalysis: fcOutcome ? {
             label: fcOutcome.label,
@@ -505,7 +558,7 @@ export async function POST(req: NextRequest) {
           fileType,
           dualModel: {
             fakecatcher: Boolean(fcOutcome),
-            realityDefender: false,
+            realityDefender: rdUsed,
           },
           fc: fcOutcome ? {
             label: fcOutcome.label,
