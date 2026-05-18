@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobFakeCatcherAnalysis, setJobRdAnalysis } from "@/lib/fakecatcherStore";
+import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobRdAnalysis } from "@/lib/fakecatcherStore";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
@@ -169,29 +169,6 @@ async function postVideoWithRetry(payload: FormData, attempts = 2) {
   }
 
   return { ok: false as const, status: lastStatus, body: lastBody, contentType: lastContentType };
-}
-
-async function postImageToFakeCatcher(payload: FormData) {
-  try {
-    const response = await fetch(buildBackendUrl("/v1/image/predict"), {
-      method: "POST",
-      body: payload,
-      cache: "no-store",
-      signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
-    });
-
-    const responseBody = await response.text();
-    const contentType = response.headers.get("content-type") || "application/json";
-
-    if (response.ok) {
-      return { ok: true as const, body: responseBody, contentType };
-    }
-
-    return { ok: false as const, body: responseBody, contentType };
-  } catch (error) {
-    const err = error as { message?: string; cause?: { code?: string } };
-    return { ok: false as const, body: err.message || "Image prediction failed", contentType: "application/json" };
-  }
 }
 
 function getForwardHeaders(req: NextRequest) {
@@ -418,8 +395,6 @@ export async function POST(req: NextRequest) {
       models: [],
     };
 
-    let fcOutcome: { label?: string; confidence?: number; fake_prob?: number } | undefined;
-
     if (fileType === "image" && uploadedFile) {
       if (!imageData) {
         try {
@@ -435,72 +410,39 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const payload = new FormData();
-      payload.append("file", uploadedFile);
+      try {
+        const rdBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+        const rdResponse = await verifyMedia({ fileBuffer: rdBuffer, fileType: "image" });
 
-      const imageResult = await postImageToFakeCatcher(payload);
-      if (imageResult.ok) {
-        try {
-          const parsed = JSON.parse(imageResult.body) as {
-            prediction?: string;
-            confidence_percentage?: number;
-            raw_scores?: { Real?: number; Fake?: number };
-          };
-          fcOutcome = {
-            label: parsed.prediction === "Fake" ? "FAKE" : parsed.prediction === "Real" ? "REAL" : undefined,
-            confidence: parsed.confidence_percentage,
-            fake_prob: parsed.raw_scores?.Fake ? parsed.raw_scores.Fake / 100 : undefined,
-          };
-        } catch (e) {
-          console.warn("Failed to parse FakeCatcher image result:", e);
-          rdOutcome.error = "Failed to parse model response";
-        }
-
-        try {
-          const rdBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-          const rdResponse = await verifyMedia({ fileBuffer: rdBuffer, fileType: "image" });
-
-          rdOutcome = {
-            requestId: rdResponse.requestId,
-            status: rdResponse.status,
-            score: rdResponse.score,
-            models: rdResponse.models.map((m) => ({
-              name: m.name,
-              status: m.status,
-              score: m.score,
-            })),
-          };
-        } catch (rdError) {
-          console.error("Reality Defender scan failed:", rdError);
-          rdOutcome = {
-            status: "ERROR",
-            score: 0,
-            models: [],
-            error: rdError instanceof Error ? rdError.message : String(rdError),
-          };
-        }
-      } else {
-        rdOutcome.error = parseBackendError(imageResult.body);
+        rdOutcome = {
+          requestId: rdResponse.requestId,
+          status: rdResponse.status,
+          score: rdResponse.score,
+          models: rdResponse.models.map((m) => ({
+            name: m.name,
+            status: m.status,
+            score: m.score,
+          })),
+        };
+      } catch (rdError) {
+        console.error("Reality Defender scan failed:", rdError);
+        rdOutcome = {
+          status: "ERROR",
+          score: 0,
+          models: [],
+          error: rdError instanceof Error ? rdError.message : String(rdError),
+        };
       }
 
-      const scanId = `fc-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const scanId = `rd-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setJobMeta(scanId, {
         userId,
         fileName,
         fileType,
-        source: "fakecatcher",
+        source: "rd-only",
         createdAt: new Date().toISOString(),
         imageData,
       });
-
-      if (fcOutcome) {
-        setJobFakeCatcherAnalysis(scanId, {
-          label: fcOutcome.label,
-          confidence: fcOutcome.confidence,
-          fake_prob: fcOutcome.fake_prob,
-          analyzedAt: new Date().toISOString(),
-        });
-      }
 
       setJobRdAnalysis(scanId, {
         requestId: rdOutcome.requestId,
@@ -511,9 +453,21 @@ export async function POST(req: NextRequest) {
         error: rdOutcome.error,
       });
 
-      const finalStatus = fcOutcome ? (fcOutcome.label === "FAKE" ? "DEEPFAKE" : fcOutcome.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS") : "UNCERTAIN";
-      const finalConfidence = fcOutcome?.confidence ? Math.round(fcOutcome.confidence * 10) / 10 : 50;
-      const modelsUsed = ["FakeCatcher", ...(rdOutcome.models.length ? ["RealityDefender"] : [])];
+      let finalStatus = "SUSPICIOUS";
+      let finalConfidence = 50;
+
+      if (rdOutcome.status === "AUTHENTIC") {
+        finalStatus = "AUTHENTIC";
+        finalConfidence = Math.round((1 - rdOutcome.score) * 100);
+      } else if (rdOutcome.status === "MANIPULATED") {
+        finalStatus = "DEEPFAKE";
+        finalConfidence = Math.round(rdOutcome.score * 100);
+      } else if (rdOutcome.status === "ERROR") {
+        finalStatus = "ERROR";
+        finalConfidence = 0;
+      }
+
+      const modelsUsed = ["RealityDefender"];
       const rdUsed = rdOutcome.status !== "DISABLED" && rdOutcome.status !== "ERROR";
       
       // Save to MongoDB for dashboard
@@ -538,12 +492,6 @@ export async function POST(req: NextRequest) {
             error: rdOutcome.error,
           },
           imageUrl: imageData || "",
-          fcAnalysis: fcOutcome ? {
-            label: fcOutcome.label,
-            confidence: fcOutcome.confidence,
-            fake_prob: fcOutcome.fake_prob,
-            analyzedAt: new Date().toISOString(),
-          } : undefined,
           createdAt: new Date(),
         });
       } catch (dbError) {
@@ -556,17 +504,19 @@ export async function POST(req: NextRequest) {
           status: finalStatus,
           fileName,
           fileType,
+          confidenceScore: finalConfidence,
           dualModel: {
-            fakecatcher: Boolean(fcOutcome),
+            fakecatcher: false,
             realityDefender: rdUsed,
           },
-          fc: fcOutcome ? {
-            label: fcOutcome.label,
-            confidence: fcOutcome.confidence,
-            fake_prob: fcOutcome.fake_prob,
+          rd: rdOutcome.status !== "ERROR" ? {
+            requestId: rdOutcome.requestId,
+            status: rdOutcome.status,
+            score: rdOutcome.score,
+            models: rdOutcome.models,
           } : null,
         },
-        { status: 200 }
+        { status: rdOutcome.status === "ERROR" ? 500 : 200 }
       );
     }
 
@@ -604,7 +554,7 @@ export async function POST(req: NextRequest) {
           fileName: parsed.filename || fileName,
           fileType,
           dualModel: {
-            fakecatcher: true,
+            fakecatcher: false,
             realityDefender: false,
           },
         },
