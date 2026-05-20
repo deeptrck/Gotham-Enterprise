@@ -56,7 +56,7 @@ Open http://localhost:3000
 1. Go to /signup
 2. Create account
 3. Check MongoDB → users collection
-   → Should see your user with 5 credits
+   → Should see your user with 10 credits
 ```
 
 ### Test 2: Create Scan
@@ -138,7 +138,7 @@ app/results/page.tsx                    # Real results from MongoDB
 - email
 - fullName
 - imageUrl
-- credits (starts at 5)
+- credits (starts at 10)
 - plan (trial, starter, growth, enterprise)
 - timestamps
 ```
@@ -167,7 +167,7 @@ app/results/page.tsx                    # Real results from MongoDB
 1. Clerk authenticates user
 2. UserSyncProvider detects login
 3. Automatically calls POST /api/users/sync
-4. User saved to MongoDB with 5 credits
+4. User saved to MongoDB with 10 credits
 ```
 
 ### On File Upload:

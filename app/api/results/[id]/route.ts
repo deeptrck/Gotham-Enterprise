@@ -65,6 +65,12 @@ function mapCombinedStatus(score: number) {
   return "SUSPICIOUS";
 }
 
+function mapRdStatusToResultStatus(status?: string) {
+  if (status === "MANIPULATED") return "DEEPFAKE";
+  if (status === "AUTHENTIC") return "AUTHENTIC";
+  return "SUSPICIOUS";
+}
+
 function mapBackendFetchError(error: unknown) {
   const err = error as { message?: string; cause?: { code?: string } };
   const causeCode = err.cause?.code;
@@ -122,7 +128,7 @@ function buildRdOnlyPayload(id: string, fileName: string, fileType: "image" | "v
   }
 
   combinedScore = clamp01(combinedScore);
-  combinedStatus = mapCombinedStatus(combinedScore);
+  combinedStatus = rdUsable && !fcUsable ? mapRdStatusToResultStatus(rd!.status) : mapCombinedStatus(combinedScore);
 
   const allModels = [
     ...(fc ? [{ name: "fakecatcher-rppg", status: fc.label || "UNKNOWN", score: clamp01(fc.confidence ? fc.confidence / 100 : 0) }] : []),

@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   fullName: { type: String, required: true },
   imageUrl: { type: String },
-  credits: { type: Number, default: 5 },
+  credits: { type: Number, default: 10 },
   plan: { type: String, enum: ["trial", "starter", "growth", "enterprise"], default: "trial" },
 }, { timestamps: true });
 

@@ -378,7 +378,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
     doc.text(`Status: ${rdStatus}`, margin, (y += 6), {
       maxWidth: 170,
     });
-    doc.text(`Score: ${rdScore}`, margin, (y += 6), {
+    doc.text(`Manipulation score: ${rdScore}`, margin, (y += 6), {
       maxWidth: 170,
     });
 
@@ -415,7 +415,7 @@ export const handleDownloadPDF = async (dto: PdfResultDto) => {
 
 const tableOptions: UserOptions = {
   startY: y + 8,
-  head: [["#", "Model", "Status", "Confidence", "Description"]],
+  head: [["#", "Model", "Status", "Manipulation Score", "Description"]],
   body: tableData,
   styles: {
     font: "helvetica",

@@ -21,7 +21,7 @@ export async function POST() {
     }
 
     // Grant trial credits (idempotent: only grant if user has <= default)
-    const TRIAL_CREDITS = 5;
+    const TRIAL_CREDITS = 10;
 
     if (!user.credits || user.credits < TRIAL_CREDITS) {
       user.credits = TRIAL_CREDITS;

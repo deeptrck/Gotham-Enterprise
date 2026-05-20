@@ -39,6 +39,12 @@ function mapCombinedStatus(score: number) {
   return "SUSPICIOUS";
 }
 
+function mapRdStatusToResultStatus(status?: string) {
+  if (status === "MANIPULATED") return "DEEPFAKE";
+  if (status === "AUTHENTIC") return "AUTHENTIC";
+  return "SUSPICIOUS";
+}
+
 function mapBackendFetchError(error: unknown) {
   const err = error as { message?: string; cause?: { code?: string } };
   const causeCode = err.cause?.code;
@@ -69,7 +75,11 @@ export async function GET(req: NextRequest) {
       .map((meta) => {
         const rd = getJobRdAnalysis(meta.jobId);
         const score = mapRdToManipulationScore(rd?.status, rd?.score);
-        const status = mapCombinedStatus(score);
+        const status = rd?.status === "MANIPULATED"
+          ? "DEEPFAKE"
+          : rd?.status === "AUTHENTIC"
+          ? "AUTHENTIC"
+          : mapCombinedStatus(score);
         const confidence = Math.round(clamp01(score) * 1000) / 10;
         const rdModelNames = (rd?.models || []).map((m) => m.name || "rd-model");
 

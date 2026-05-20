@@ -32,9 +32,9 @@ export default function PricingBillingPage() {
       name: "Trial",
       price: "Free",
       description: "Get started",
-      credits: 20,
+      credits: 10,
       features: [
-        "20 scan credits",
+        "10 scan credits",
         "Basic results",
         "30-day access",
         "Email support",

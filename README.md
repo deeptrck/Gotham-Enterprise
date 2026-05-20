@@ -116,7 +116,7 @@ This project uses **MongoDB** for data persistence:
 
 ### Features:
 - ✅ Automatic user sync from Clerk
-- ✅ Credit system (5 initial credits per user)
+- ✅ Credit system (10 initial credits per user)
 - ✅ Plan management (trial, starter, growth, enterprise)
 - ✅ Full scan history with timestamps
 - ✅ Indexed queries for performance
