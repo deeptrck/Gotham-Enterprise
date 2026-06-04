@@ -712,7 +712,7 @@ function CreditUsage({ clients }: { clients: ClientCredit[] }) {
           {clients.map((c) => {
             const pct = Math.round((c.used / c.total) * 100);
             return (
-              <tr key={c.name}>
+              <tr key={c.id}>
                 <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)", fontWeight: 500, color: "var(--color-text-primary)" }}>{c.name}</td>
                 <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}><Pill variant={planVariant(c.plan)}>{c.plan}</Pill></td>
                 <td style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>

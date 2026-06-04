@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
         .skip(skip)
         .limit(limit)
         .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
+        .hint({ userId: 1, createdAt: -1 })
         .maxTimeMS(5000)
         .lean({ virtuals: false, getters: false })
         .exec() as unknown as Promise<ScanSummary[]>,

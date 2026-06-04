@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getJobMeta, getJobRdAnalysis, listUserJobMeta } from "@/lib/fakecatcherStore";
+import { connectToDatabase } from "@/lib/db";
+import { VerificationResult } from "@/lib/models/VerificationResult";
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -11,6 +13,8 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
   5000,
   parseInt(process.env.BACKEND_REQUEST_TIMEOUT_MS || "90000", 10)
 );
+
+// Note: removed transient timeout wrapper to restore original DB behaviour
 
 function buildBackendUrl(path: string) {
   return `${BACKEND_API_URL}${path}`;
@@ -69,9 +73,11 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get("limit") || "20", 10)));
 
-    // Skip backend call for faster loading, use only cached RD-only results
+    const maxResultsEntries = 200;
     const rdOnlyEntries = listUserJobMeta(userId)
       .filter((meta) => meta.source === "rd-only")
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, maxResultsEntries)
       .map((meta) => {
         const rd = getJobRdAnalysis(meta.jobId);
         const score = mapRdToManipulationScore(rd?.status, rd?.score);
@@ -106,19 +112,66 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    const entries = rdOnlyEntries;
+    // Merge DB-backed verification results with rd-only cached entries efficiently
+    let entries: any[] = [];
+    let total = 0;
+    let pages = 0;
 
-    entries.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    try {
+      await connectToDatabase();
 
-    const total = entries.length;
-    const pages = total > 0 ? Math.ceil(total / limit) : 0;
-    const start = (page - 1) * limit;
-    const data = entries.slice(start, start + limit);
+      // Count DB entries and fetch the top `page * limit` to allow merging without pulling entire collection
+      const fetchLimit = Math.max(limit * page, limit);
+      const dbCount = await VerificationResult.countDocuments({ userId }).maxTimeMS(3000).exec();
+      const dbTop = await VerificationResult.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(fetchLimit)
+        .hint({ userId: 1, createdAt: -1 })
+        .maxTimeMS(3000)
+        .lean();
+
+      const dbEntries = (dbTop || []).map((d: any) => ({
+        _id: d._id,
+        scanId: d.scanId || d._id,
+        fileName: d.fileName,
+        status: d.status,
+        confidenceScore: d.confidenceScore,
+        createdAt: d.createdAt || d.createdAt,
+        fileType: d.fileType,
+        imageUrl: d.imageUrl || "",
+        description: d.description || "",
+        modelsUsed: d.modelsUsed || [],
+        features: d.features || [],
+      }));
+
+      const dbScanIds = new Set(dbEntries.map((d) => String(d.scanId)));
+
+      // Take top RD-only entries up to fetchLimit, excluding those present in DB
+      const rdTop = rdOnlyEntries
+        .filter((e) => !dbScanIds.has(String(e.scanId)))
+        .slice(0, fetchLimit);
+
+      // Merge and sort by createdAt
+      const combined = [...dbEntries, ...rdTop].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
+      // Compute total as dbCount + number of rdOnly entries not present in DB
+      const rdOnlyUniqueCount = rdOnlyEntries.filter((e) => !dbScanIds.has(String(e.scanId))).length;
+      total = dbCount + rdOnlyUniqueCount;
+      pages = total > 0 ? Math.ceil(total / limit) : 0;
+
+      const start = (page - 1) * limit;
+      entries = combined.slice(start, start + limit);
+    } catch (dbErr) {
+      // If DB is unavailable, fallback to RD-only cached entries (fast)
+      entries = rdOnlyEntries.slice((page - 1) * limit, page * limit);
+      total = rdOnlyEntries.length;
+      pages = total > 0 ? Math.ceil(total / limit) : 0;
+    }
 
     return NextResponse.json(
       {
         success: true,
-        data,
+        data: entries,
         pagination: {
           page,
           limit,

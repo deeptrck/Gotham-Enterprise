@@ -8,6 +8,7 @@ import {
 } from "../_components/ui";
 
 interface ClientCredits {
+  id: string;
   name: string;
   plan: string;
   remaining: number;
@@ -76,7 +77,8 @@ function useCreditsData() {
 
         if (clientsRes.ok) {
           const clientsData = await clientsRes.json();
-          const transformed = (clientsData.clients || []).map((c: Record<string, unknown>) => ({
+          const transformed = (clientsData.clients || []).map((c: Record<string, unknown>, index: number) => ({
+            id: (c.id as string) || (c._id as string) || `${String(c.name || "client")}-${index}`,
             name: c.name as string || "Unknown",
             plan: (c.plan as string) || "starter",
             remaining: c.credits_remaining as number || 0,
@@ -196,7 +198,7 @@ export default function CreditsPage() {
           <CardHead title="Credit balance by client" />
           <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: 14 }}>
             {clients.map((c) => (
-              <div key={c.name}>
+              <div key={c.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{c.name}</span>
@@ -255,7 +257,7 @@ export default function CreditsPage() {
               title="Credit ledger"
               right={
                 <Select value={filterClient} onChange={setFilterClient}>
-                  {["All", ...clients.map((c) => c.name)].map((n) => <option key={n}>{n}</option>)}
+                  {["All", ...clients.map((c) => c.name)].map((n, index) => <option key={`${n}-${index}`}>{n}</option>)}
                 </Select>
               }
             />
@@ -288,7 +290,7 @@ export default function CreditsPage() {
               <div>
                 <label style={{ fontSize: 11, color: "var(--color-text-secondary)", display: "block", marginBottom: 4 }}>Client</label>
                 <Select value={adjustClient} onChange={setAdjustClient} style={{ width: "100%" }}>
-                  {clients.map((c) => <option key={c.name}>{c.name}</option>)}
+                  {clients.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </Select>
               </div>
               <div>

@@ -24,6 +24,7 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
   5000,
   parseInt(process.env.BACKEND_REQUEST_TIMEOUT_MS || "90000", 10)
 );
+
 const CREDIT_COST_PER_SCAN = 1;
 
 function hasAcceptedVideoExtension(name: string) {
@@ -209,32 +210,38 @@ export async function GET(req: NextRequest) {
     }
 
     const jobs = jobsPayload.jobs || {};
+    const maxScanEntries = 200;
 
-    const backendScans = Object.entries(jobs).map(([jobId, job]) => {
-      const meta = getJobMeta(jobId);
-      const mappedStatus = job.status === "done"
-        ? "AUTHENTIC"
-        : job.status === "error"
-        ? "DEEPFAKE"
-        : "PROCESSING";
+    const backendScans = Object.entries(jobs)
+      .sort(([, a], [, b]) => (a.age_sec ?? Number.MAX_SAFE_INTEGER) - (b.age_sec ?? Number.MAX_SAFE_INTEGER))
+      .slice(0, maxScanEntries)
+      .map(([jobId, job]) => {
+        const meta = getJobMeta(jobId);
+        const mappedStatus = job.status === "done"
+          ? "AUTHENTIC"
+          : job.status === "error"
+          ? "DEEPFAKE"
+          : "PROCESSING";
 
-      return {
-        _id: jobId,
-        scanId: jobId,
-        fileName: meta?.fileName || job.filename || `video-${jobId}`,
-        fileType: "video",
-        status: mappedStatus,
-        confidenceScore: 0,
-        createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
-        imageUrl: meta?.imageData || "",
-      };
-    }).filter((item) => {
-      const meta = getJobMeta(item.scanId);
-      return !meta || meta.userId === userId;
-    });
+        return {
+          _id: jobId,
+          scanId: jobId,
+          fileName: meta?.fileName || job.filename || `video-${jobId}`,
+          fileType: "video",
+          status: mappedStatus,
+          confidenceScore: 0,
+          createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
+          imageUrl: meta?.imageData || "",
+        };
+      }).filter((item) => {
+        const meta = getJobMeta(item.scanId);
+        return !meta || meta.userId === userId;
+      });
 
     const rdOnlyScans = listUserJobMeta(userId)
       .filter((meta) => meta.source === "fakecatcher")
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, maxScanEntries)
       .map((meta) => {
         const fc = getJobFakeCatcherAnalysis(meta.jobId);
         let status = "SUSPICIOUS";
@@ -256,9 +263,43 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    const scans = [...backendScans, ...rdOnlyScans].sort(
-      (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
-    );
+    // Also include persisted verification results from DB so history survives server restarts.
+    // Limit DB fetch to latest N entries to avoid long queries.
+    let scans = [];
+    try {
+      await connectToDatabase();
+      const fetchLimit = 200;
+      const dbTop = await VerificationResult.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(fetchLimit)
+        .hint({ userId: 1, createdAt: -1 })
+        .maxTimeMS(3000)
+        .lean();
+
+      const dbScans = (dbTop || []).map((d: any) => ({
+        _id: d._id,
+        scanId: d.scanId || d._id,
+        fileName: d.fileName,
+        fileType: d.fileType,
+        status: d.status,
+        confidenceScore: d.confidenceScore,
+        createdAt: d.createdAt || d.createdAt,
+        imageUrl: d.imageUrl || "",
+      }));
+
+      // Merge backendScans, rdOnlyScans and dbScans, dedupe by scanId (prefer DB entries)
+      const byScan = new Map<string, any>();
+      for (const s of dbScans) byScan.set(String(s.scanId), s);
+      for (const s of backendScans) if (!byScan.has(String(s.scanId))) byScan.set(String(s.scanId), s);
+      for (const s of rdOnlyScans) if (!byScan.has(String(s.scanId))) byScan.set(String(s.scanId), s);
+
+      scans = Array.from(byScan.values())
+        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+        .slice(0, maxScanEntries);
+    } catch (dbErr) {
+      // If DB is unavailable, fall back to in-memory cached entries (fast path)
+      scans = [...backendScans, ...rdOnlyScans].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    }
 
     return NextResponse.json(
       degraded

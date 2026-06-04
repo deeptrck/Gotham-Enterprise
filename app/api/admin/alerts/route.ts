@@ -17,19 +17,34 @@ export async function GET(req: NextRequest) {
     const alerts: Array<{ level: "error" | "warn"; title: string; body: string }> = [];
 
     // Check 1: Clients hitting credit limits
-    const users = await User.find({ 
-      $expr: { $lte: ["$credits", { $multiply: ["$creditsUsed", 0.2] }] }
-    }).lean();
+    const alertUsers = await User.aggregate([
+      {
+        $match: {
+          credits: { $exists: true },
+          creditsUsed: { $exists: true },
+          credits: { $gt: 0 },
+        },
+      },
+      {
+        $addFields: {
+          usagePct: {
+            $multiply: [{ $divide: ["$creditsUsed", "$credits"] }, 100],
+          },
+        },
+      },
+      { $match: { usagePct: { $gte: 80 } } },
+      { $project: { email: 1, plan: 1, credits: 1, creditsUsed: 1, usagePct: 1 } },
+      { $sort: { usagePct: -1 } },
+      { $limit: 50 },
+    ]).option({ maxTimeMS: 3000 }).exec();
 
-    users.forEach((u) => {
-      const usagePct = u.creditsUsed && u.credits ? Math.round((u.creditsUsed / u.credits) * 100) : 0;
-      if (usagePct >= 80) {
-        alerts.push({
-          level: usagePct >= 90 ? "error" : "warn",
-          title: `${u.email?.split("@")[0]} hitting credit limit`,
-          body: `${usagePct}% of ${u.plan || "starter"} plan used. Upsell opportunity.`,
-        });
-      }
+    alertUsers.forEach((u: any) => {
+      const usagePct = Math.round(u.usagePct || 0);
+      alerts.push({
+        level: usagePct >= 90 ? "error" : "warn",
+        title: `${u.email?.split("@")[0]} hitting credit limit`,
+        body: `${usagePct}% of ${u.plan || "starter"} plan used. Upsell opportunity.`,
+      });
     });
 
     // Check 2: Model confidence drift (compare last 7 days vs 30 days)
@@ -37,22 +52,29 @@ export async function GET(req: NextRequest) {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const [recentScans, olderScans] = await Promise.all([
-      VerificationResult.find({
-        createdAt: { $gte: sevenDaysAgo },
-        confidenceScore: { $exists: true },
-      }).lean(),
-      VerificationResult.find({
-        createdAt: { $gte: thirtyDaysAgo, $lt: sevenDaysAgo },
-        confidenceScore: { $exists: true },
-      }).lean(),
+    const [recentAgg, olderAgg] = await Promise.all([
+      VerificationResult.aggregate([
+        { $match: { createdAt: { $gte: sevenDaysAgo }, confidenceScore: { $exists: true } } },
+        { $group: { _id: null, avgScore: { $avg: "$confidenceScore" }, count: { $sum: 1 } } },
+      ]).option({ maxTimeMS: 3000 }).exec(),
+      VerificationResult.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: thirtyDaysAgo, $lt: sevenDaysAgo },
+            confidenceScore: { $exists: true },
+          },
+        },
+        { $group: { _id: null, avgScore: { $avg: "$confidenceScore" }, count: { $sum: 1 } } },
+      ]).option({ maxTimeMS: 3000 }).exec(),
     ]);
 
-    if (recentScans.length > 10 && olderScans.length > 10) {
-      const recentAvg = recentScans.reduce((sum, s) => sum + s.confidenceScore, 0) / recentScans.length;
-      const olderAvg = olderScans.reduce((sum, s) => sum + s.confidenceScore, 0) / olderScans.length;
-      const drift = recentAvg - olderAvg;
+    const recentCount = recentAgg?.[0]?.count ?? 0;
+    const olderCount = olderAgg?.[0]?.count ?? 0;
+    const recentAvg = recentAgg?.[0]?.avgScore ?? 0;
+    const olderAvg = olderAgg?.[0]?.avgScore ?? 0;
 
+    if (recentCount > 10 && olderCount > 10) {
+      const drift = recentAvg - olderAvg;
       if (Math.abs(drift) > 3) {
         alerts.push({
           level: "warn",
@@ -66,7 +88,7 @@ export async function GET(req: NextRequest) {
     const errorScans = await VerificationResult.countDocuments({
       status: "ERROR",
       createdAt: { $gte: sevenDaysAgo },
-    });
+    }).maxTimeMS(3000).exec();
 
     if (errorScans > 10) {
       alerts.push({
@@ -83,7 +105,7 @@ export async function GET(req: NextRequest) {
         { reviewStatus: { $exists: false } },
         { reviewStatus: "pending" },
       ],
-    });
+    }).maxTimeMS(3000).exec();
 
     if (pendingReviews > 20) {
       alerts.push({
