@@ -20,9 +20,8 @@ export async function GET(req: NextRequest) {
     const alertUsers = await User.aggregate([
       {
         $match: {
-          credits: { $exists: true },
+          credits: { $exists: true, $gt: 0 },
           creditsUsed: { $exists: true },
-          credits: { $gt: 0 },
         },
       },
       {
