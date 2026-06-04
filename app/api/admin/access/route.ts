@@ -9,9 +9,10 @@ export async function GET() {
   }
 
   const user = await currentUser();
-  const emails = (user?.emailAddresses || [])
-    .map((entry) => entry.emailAddress?.trim().toLowerCase())
-    .filter((value): value is string => Boolean(value));
+  const emails = [
+    ...(user?.emailAddresses || []).map((entry) => entry.emailAddress?.trim().toLowerCase()),
+    user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase(),
+  ].filter((value): value is string => Boolean(value));
 
   const allowlist = getAdminEmailAllowlist();
   const allowed = isEmailAllowlisted(emails, allowlist);

@@ -9,6 +9,7 @@ export interface IUser extends Document {
   creditsUsed?: number;
   scanCount?: number;
   plan: "trial" | "starter" | "growth" | "enterprise";
+  trialUsed?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,6 +24,7 @@ const userSchema = new Schema<IUser>(
     creditsUsed: { type: Number, default: 0 },
     scanCount: { type: Number, default: 0 },
     plan: { type: String, enum: ["trial", "starter", "growth", "enterprise"], default: "trial" },
+    trialUsed: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -29,12 +29,17 @@ type ResultsPage = {
 
 type ScanFallbackRow = {
   scanId?: string;
+  id?: string;
   _id?: string;
   fileName?: string;
   status?: string;
+  verdict?: string;
   confidenceScore?: number;
+  confidence?: number;
   createdAt?: string;
+  time?: string;
   fileType?: string;
+  type?: string;
 };
 
 type ScansPayload =
@@ -156,12 +161,16 @@ export default function AdminDashboardClient() {
         const all: ScanRow[] = [];
         let degradedMessage: string | null = null;
 
-        // Directly fetch from /api/scans to avoid slow /jobs fallback
-        const scansResponse = await fetch("/api/scans", {
+        // Directly fetch from /api/admin/scans with timeout to get all scans across clients
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const scansResponse = await fetch("/api/admin/scans", {
           method: "GET",
           credentials: "include",
           cache: "no-store",
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
 
         if (scansResponse.ok) {
           const scansPayload = (await scansResponse.json()) as ScansPayload;
@@ -170,20 +179,22 @@ export default function AdminDashboardClient() {
             : scansPayload.scans || [];
 
           const normalized = scanRows.map((row) => ({
-            scanId: row.scanId || row._id || "unknown",
+            scanId: row.scanId || row.id || row._id || "unknown",
             fileName: row.fileName || "unknown-file",
-            status: String(row.status || "PROCESSING").toUpperCase(),
-            confidenceScore: Number(row.confidenceScore || 0),
-            createdAt: row.createdAt || new Date().toISOString(),
-            fileType: row.fileType || "unknown",
+            status: String(row.status || row.verdict || "PROCESSING").toUpperCase(),
+            confidenceScore: Number(row.confidenceScore || row.confidence || 0),
+            createdAt: row.createdAt || row.time || new Date().toISOString(),
+            fileType: row.fileType || row.type || "unknown",
           }));
 
           all.push(...normalized.slice(0, 100)); // Limit to 100 for performance
           if (!Array.isArray(scansPayload) && scansPayload.degraded) {
             degradedMessage = scansPayload.degraded;
           }
+        } else if (scansResponse.status === 403) {
+          degradedMessage = "Admin access required. Check your email allowlist.";
         } else {
-          degradedMessage = "Failed to load telemetry data.";
+          degradedMessage = `Failed to load telemetry (${scansResponse.status}).`;
         }
 
         if (!mounted) return;
@@ -212,7 +223,15 @@ export default function AdminDashboardClient() {
         }
       } catch (err) {
         if (!mounted) return;
-        setError(err instanceof Error ? err.message : "Failed to load admin data");
+        if (err instanceof Error) {
+          if (err.name === "AbortError") {
+            setError("Request timed out (>10s). Database may be slow. Try refreshing.");
+          } else {
+            setError(err.message);
+          }
+        } else {
+          setError("Failed to load admin data");
+        }
       } finally {
         if (mounted) setLoading(false);
       }

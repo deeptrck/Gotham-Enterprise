@@ -33,7 +33,15 @@ export async function POST(req: NextRequest) {
           { email },
         ],
       },
-      { clerkId: userId, email, fullName, imageUrl },
+      {
+        $set: { clerkId: userId, email, fullName, imageUrl },
+        $setOnInsert: {
+          credits: 10,
+          creditsUsed: 0,
+          plan: "trial",
+          trialUsed: true,
+        },
+      },
       { upsert: true, new: true }
     );
 

@@ -59,7 +59,10 @@ export default clerkMiddleware(async (auth, req) => {
 
     const client = await clerkClient();
     const user = await client.users.getUser(userId);
-    const emails = user.emailAddresses.map((e) => e.emailAddress.toLowerCase());
+    const emails = [
+      ...(user.emailAddresses || []).map((e) => e.emailAddress?.toLowerCase()),
+      user.primaryEmailAddress?.emailAddress?.toLowerCase(),
+    ].filter((value): value is string => Boolean(value));
 
     if (!isEmailAllowlisted(emails)) {
       return NextResponse.redirect(new URL("/", req.url));

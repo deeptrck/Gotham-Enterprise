@@ -16,9 +16,10 @@ export default async function AdminDashboardPage() {
   }
 
   const user = await currentUser();
-  const emails = (user?.emailAddresses || [])
-    .map((entry) => entry.emailAddress?.trim().toLowerCase())
-    .filter((value): value is string => Boolean(value));
+  const emails = [
+    ...(user?.emailAddresses || []).map((entry) => entry.emailAddress?.trim().toLowerCase()),
+    user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase(),
+  ].filter((value): value is string => Boolean(value));
 
   const allowed = isEmailAllowlisted(emails, allowlist);
   if (!allowed) {

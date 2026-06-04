@@ -89,6 +89,8 @@ const verificationResultSchema = new Schema<IVerificationResult>(
 verificationResultSchema.index({ createdAt: -1 });
 verificationResultSchema.index({ userId: 1, createdAt: -1 });
 verificationResultSchema.index({ confidenceScore: 1, reviewStatus: 1 });
+verificationResultSchema.index({ status: 1, createdAt: -1 }); // For admin dashboard filtering
+verificationResultSchema.index({ fileType: 1, createdAt: -1 }); // For admin dashboard filtering
 
 export const VerificationResult =
   mongoose.models?.VerificationResult || mongoose.model("VerificationResult", verificationResultSchema);

@@ -20,14 +20,20 @@ export async function POST() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Grant trial credits (idempotent: only grant if user has <= default)
-    const TRIAL_CREDITS = 10;
+    if (user.trialUsed) {
+      return NextResponse.json(
+        { error: "Trial already claimed. Please purchase credits to continue." },
+        { status: 400 }
+      );
+    }
 
+    const TRIAL_CREDITS = 10;
     if (!user.credits || user.credits < TRIAL_CREDITS) {
       user.credits = TRIAL_CREDITS;
     }
 
     user.plan = "trial";
+    user.trialUsed = true;
     await user.save();
 
     return NextResponse.json({ success: true, credits: user.credits });

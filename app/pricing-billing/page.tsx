@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { createPaystackTransaction, subscribeToTrial } from "@/lib/api";
 import { useUser } from "@clerk/nextjs";
@@ -15,6 +15,7 @@ export default function PricingBillingPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [userCredits, setUserCredits] = useState<number | null>(null);
+  const [trialAvailable, setTrialAvailable] = useState<boolean | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
 
   const showToast = (message: string, ms = 4000) => {
@@ -25,6 +26,41 @@ export default function PricingBillingPage() {
       setToastMessage(null);
     }, ms);
   };
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setTrialAvailable(null);
+      return;
+    }
+
+    let mounted = true;
+    const fetchUserState = async () => {
+      try {
+        const res = await fetch("/api/users/sync", {
+          method: "GET",
+          credentials: "include",
+        });
+        if (!mounted) return;
+
+        if (!res.ok) {
+          setTrialAvailable(null);
+          return;
+        }
+
+        const user = await res.json();
+        setUserCredits(user.credits ?? null);
+        setTrialAvailable(user.trialUsed !== true);
+      } catch (err) {
+        console.error("Unable to load user trial state", err);
+        setTrialAvailable(null);
+      }
+    };
+
+    fetchUserState();
+    return () => {
+      mounted = false;
+    };
+  }, [isSignedIn]);
 
   const plans = [
     {
@@ -169,20 +205,26 @@ export default function PricingBillingPage() {
       return;
     }
 
+    if (trialAvailable === false) {
+      showToast('Trial already claimed. Please purchase credits to continue.');
+      return;
+    }
+
     try {
       setLoadingRef(plan.id + "-trial");
       const res = await subscribeToTrial();
       if (res && res.success) {
         showToast(`Trial activated — ${res.credits} credits added to your account`);
-        // update local credit display without leaving the page
         setUserCredits(res.credits ?? null);
+        setTrialAvailable(false);
       } else {
         showToast('Unable to activate trial. Please contact support.');
       }
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error activating trial. See console for details.';
       console.error('Error subscribing to trial', err);
       Sentry.captureException(err);
-      showToast('Error activating trial. See console for details.');
+      showToast(errorMessage);
     } finally {
       setLoadingRef(null);
     }
@@ -351,10 +393,18 @@ export default function PricingBillingPage() {
                 <div className="mb-6">
                   {plan.id === 'trial' ? (
                     <button
-                      className="w-full bg-white text-blue-500 border border-blue-100 hover:bg-blue-50 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors"
+                      disabled={trialAvailable === false || loadingRef === plan.id + "-trial"}
+                      className={`w-full border py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors ${trialAvailable === false || loadingRef === plan.id + "-trial"
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                        : "bg-white text-blue-500 border-blue-100 hover:bg-blue-50"
+                      }`}
                       onClick={() => handleSubscribeTrial(plan)}
                     >
-                      {loadingRef === plan.id + "-trial" ? 'Processing...' : 'Get Started'}
+                      {trialAvailable === false
+                        ? 'Trial already used'
+                        : loadingRef === plan.id + "-trial"
+                          ? 'Processing...'
+                          : 'Get Started'}
                     </button>
                   ) : plan.id === 'enterprise' ? (
                     <a href="mailto:sales@deeptrack.com" className="w-full inline-flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-600 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors">Contact Sales</a>
