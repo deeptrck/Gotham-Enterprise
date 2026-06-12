@@ -2,19 +2,24 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: {
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    MONGODB_URI: process.env.MONGODB_URI,
+    REALITY_DEFENDER_API_KEY: process.env.REALITY_DEFENDER_API_KEY,
+    BACKEND_API_URL: process.env.BACKEND_API_URL,
+  },
   images: {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "img.clerk.com",      
+        hostname: "img.clerk.com",
       },
       {
         protocol: "https",
-        hostname: "via.placeholder.com",    
+        hostname: "via.placeholder.com",
       },
     ],
   },
-  
 };
 
 export default withSentryConfig(nextConfig, {
