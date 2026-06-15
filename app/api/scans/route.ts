@@ -5,6 +5,14 @@ import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import verifyMedia from "@/lib/realityDefender";
+import { SageMakerRuntimeClient, InvokeEndpointCommand } from "@aws-sdk/client-sagemaker-runtime";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegPath from "@ffmpeg-installer/ffmpeg";
+import { writeFile, mkdtemp, readFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+
+ffmpeg.setFfmpegPath(ffmpegPath.path);
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -26,6 +34,12 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
 );
 
 const CREDIT_COST_PER_SCAN = 1;
+const SAGEMAKER_ENDPOINT_NAME = process.env.SAGEMAKER_ENDPOINT_NAME || "";
+const SAGEMAKER_REGION = process.env.SAGEMAKER_REGION || "us-east-1";
+const VIDEO_FRAME_SAMPLE_COUNT = 3;
+
+const sagemakerClient = new SageMakerRuntimeClient({ region: SAGEMAKER_REGION });
+
 
 function hasAcceptedVideoExtension(name: string) {
   const lower = name.toLowerCase();
@@ -82,6 +96,67 @@ function parseBackendError(raw: string) {
   } catch {
     return raw || "Backend error";
   }
+}
+
+async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<Buffer[]> {
+  const workDir = await mkdtemp(path.join(tmpdir(), "gotham-video-"));
+  const inputPath = path.join(workDir, "input.mp4");
+  await writeFile(inputPath, videoBuffer);
+  try {
+    const duration: number = await new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(inputPath, (err, metadata) => {
+        if (err) return reject(err);
+        resolve(metadata.format.duration || 1);
+      });
+    });
+    const timestamps: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const fraction = (i + 1) / (count + 1);
+      timestamps.push(Math.max(0, duration * fraction));
+    }
+    const framePaths: string[] = [];
+    await Promise.all(timestamps.map((ts, i) => {
+      const outPath = path.join(workDir, "frame_" + i + ".jpg");
+      framePaths.push(outPath);
+      return new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath).on("end", () => resolve()).on("error", (err) => reject(err)).screenshots({ timestamps: [ts], filename: "frame_" + i + ".jpg", folder: workDir, size: "224x224" });
+      });
+    }));
+    const buffers = await Promise.all(framePaths.map((p) => readFile(p)));
+    return buffers;
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function invokeGothamEndpoint(frameBuffer: Buffer): Promise<{ label: string; score: number; confidence: number } | null> {
+  if (!SAGEMAKER_ENDPOINT_NAME) return null;
+  try {
+    const command = new InvokeEndpointCommand({ EndpointName: SAGEMAKER_ENDPOINT_NAME, ContentType: "application/x-image", Accept: "application/json", Body: frameBuffer });
+    const response = await sagemakerClient.send(command);
+    const bodyText = Buffer.from(response.Body as Uint8Array).toString("utf-8");
+    return JSON.parse(bodyText) as { label: string; score: number; confidence: number };
+  } catch (error) {
+    console.error("SageMaker invocation failed:", error);
+    return null;
+  }
+}
+
+async function analyzeVideoWithGotham(videoBuffer: Buffer): Promise<{ status: string; confidenceScore: number; frameResults: Array<{ label: string; score: number; confidence: number }>; error?: string }> {
+  let frames: Buffer[];
+  try {
+    frames = await extractVideoFrames(videoBuffer, VIDEO_FRAME_SAMPLE_COUNT);
+  } catch (error) {
+    console.error("Frame extraction failed:", error);
+    return { status: "ERROR", confidenceScore: 0, frameResults: [], error: "Failed to extract frames from video" };
+  }
+  const results = await Promise.all(frames.map((f) => invokeGothamEndpoint(f)));
+  const validResults = results.filter((r): r is { label: string; score: number; confidence: number } => r !== null);
+  if (validResults.length === 0) return { status: "ERROR", confidenceScore: 0, frameResults: [], error: "Model endpoint unavailable" };
+  const avgScore = validResults.reduce((sum, r) => sum + r.score, 0) / validResults.length;
+  const status = mapCombinedStatus(avgScore);
+  const confidenceScore = Math.round((status === "AUTHENTIC" ? 1 - avgScore : avgScore) * 100);
+  return { status, confidenceScore, frameResults: validResults };
 }
 
 async function consumeUserCredit(userId: string) {
@@ -560,46 +635,60 @@ export async function POST(req: NextRequest) {
         { status: rdOutcome.status === "ERROR" ? 500 : 200 }
       );
     }
-
     if (fileType === "video" && uploadedFile) {
-      const payload = new FormData();
-      payload.append("file", uploadedFile);
+      const videoBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+      const analysis = await analyzeVideoWithGotham(videoBuffer);
 
-      const submit = await postVideoWithRetry(payload, 2);
-      if (!submit.ok) {
+      if (analysis.status === "ERROR") {
         if (chargedUserId) {
           await refundUserCredit(userId);
           chargedUserId = null;
         }
-
-        return NextResponse.json(
-          { error: parseBackendError(submit.body) },
-          { status: submit.status }
-        );
+        return NextResponse.json({ error: analysis.error || "Video analysis failed" }, { status: 502 });
       }
 
-      const parsed = JSON.parse(submit.body) as { job_id: string; status?: string; filename?: string };
-      setJobMeta(parsed.job_id, {
+      const scanId = `gotham-vid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        await connectToDatabase();
+        await VerificationResult.create({
+          userId,
+          scanId,
+          fileName,
+          fileType,
+          status: analysis.status as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
+          confidenceScore: analysis.confidenceScore,
+          modelsUsed: ["GothamSwinV3"],
+          requestPath: req.nextUrl.pathname,
+          method: "POST",
+          imageUrl: "",
+          createdAt: new Date(),
+        });
+      } catch (dbError) {
+        console.warn("Failed to save video scan to MongoDB:", dbError);
+      }
+
+      setJobMeta(scanId, {
         userId,
-        fileName: parsed.filename || fileName,
+        fileName,
         fileType,
         source: "fakecatcher",
         createdAt: new Date().toISOString(),
-        imageData: imageData,
       });
 
       return NextResponse.json(
         {
-          scanId: parsed.job_id,
-          status: parsed.status || "queued",
-          fileName: parsed.filename || fileName,
+          scanId,
+          status: analysis.status,
+          fileName,
           fileType,
+          confidenceScore: analysis.confidenceScore,
           dualModel: {
-            fakecatcher: false,
+            fakecatcher: true,
             realityDefender: false,
           },
         },
-        { status: 202 }
+        { status: 200 }
       );
     }
 
@@ -631,3 +720,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
