@@ -6,13 +6,15 @@ import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import verifyMedia from "@/lib/realityDefender";
 import { SageMakerRuntimeClient, InvokeEndpointCommand } from "@aws-sdk/client-sagemaker-runtime";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "@ffmpeg-installer/ffmpeg";
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import ffmpegStatic from 'ffmpeg-static';
+
+const execFileAsync = promisify(execFile);
 import { writeFile, mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
-ffmpeg.setFfmpegPath(ffmpegPath.path);
 
 const BACKEND_API_URL = (
   process.env.BACKEND_API_URL ||
@@ -103,27 +105,17 @@ async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<B
   const inputPath = path.join(workDir, "input.mp4");
   await writeFile(inputPath, videoBuffer);
   try {
-    const duration: number = await new Promise((resolve, reject) => {
-      ffmpeg.ffprobe(inputPath, (err, metadata) => {
-        if (err) return reject(err);
-        resolve(metadata.format.duration || 1);
-      });
-    });
-    const timestamps: number[] = [];
-    for (let i = 0; i < count; i++) {
-      const fraction = (i + 1) / (count + 1);
-      timestamps.push(Math.max(0, duration * fraction));
-    }
+    const probeResult = await execFileAsync(ffmpegStatic as string, ["-i", inputPath, "-hide_banner"], { encoding: "utf8" }).catch(e => e);
+    const durationMatch = (probeResult.stderr || "").match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+    const duration = durationMatch ? parseInt(durationMatch[1]) * 3600 + parseInt(durationMatch[2]) * 60 + parseFloat(durationMatch[3]) : 10;
     const framePaths: string[] = [];
-    await Promise.all(timestamps.map((ts, i) => {
+    for (let i = 0; i < count; i++) {
+      const ts = Math.max(0, duration * (i + 1) / (count + 1));
       const outPath = path.join(workDir, "frame_" + i + ".jpg");
       framePaths.push(outPath);
-      return new Promise<void>((resolve, reject) => {
-        ffmpeg(inputPath).on("end", () => resolve()).on("error", (err) => reject(err)).screenshots({ timestamps: [ts], filename: "frame_" + i + ".jpg", folder: workDir, size: "224x224" });
-      });
-    }));
-    const buffers = await Promise.all(framePaths.map((p) => readFile(p)));
-    return buffers;
+      await execFileAsync(ffmpegStatic as string, ["-ss", String(ts), "-i", inputPath, "-vframes", "1", "-vf", "scale=224:224", "-y", outPath]);
+    }
+    return await Promise.all(framePaths.map((p) => readFile(p)));
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -720,4 +712,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
