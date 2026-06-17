@@ -9,7 +9,9 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      // Don’t hard-fail during OAuth/login while Clerk session cookies are establishing.
+      // This prevents the UI from erroring; sync can be retried once authenticated.
+      return NextResponse.json({ success: true, skipped: true }, { status: 200 });
     }
 
     const body = await req.json();

@@ -30,6 +30,8 @@ export async function fetchScans() {
     const response = await fetch("/api/scans", { method: "GET", credentials: "include" });
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
+      // Avoid breaking the whole app during auth/OAuth warm-up.
+      if (response.status === 401) return [];
       throw new Error(errBody?.error || "Failed to fetch scans");
     }
     return await response.json();
@@ -48,6 +50,9 @@ export async function fetchDashboardData() {
     const response = await fetch("/api/users/dashboard", { method: "GET", credentials: "include" });
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
+      if (response.status === 401) {
+        return { credits: 0, scans: [], page: 1, limit: 20 };
+      }
       throw new Error(errBody?.error || "Failed to fetch dashboard data");
     }
     return await response.json();
@@ -109,6 +114,7 @@ export async function fetchResult(scanId: string) {
     const response = await fetch(`/api/results/${scanId}`, { method: "GET", credentials: "include" });
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
+      if (response.status === 401) return null;
       throw new Error(errBody?.error || "Failed to fetch result");
     }
     return await response.json();
@@ -123,6 +129,7 @@ export async function fetchAllResults(page: number = 1, limit: number = 20) {
     const response = await fetch(`/api/results?page=${page}&limit=${limit}`, { method: "GET", credentials: "include" });
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
+      if (response.status === 401) return [];
       throw new Error(errBody?.error || "Failed to fetch results");
     }
     return await response.json();
