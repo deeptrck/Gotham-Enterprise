@@ -55,7 +55,7 @@ const filterOptions = [
 ];
 
 export default function Dashboard() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, isLoaded } = useUser();
   const [allScans, setAllScans] = useState<ApiScan[]>([]);
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [userCredits, setUserCredits] = useState(0);
@@ -144,7 +144,11 @@ export default function Dashboard() {
 
   // Load data once
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isSignedIn) {
+      window.location.href = "/login";
+      return;
+    }
 
     const loadData = async () => {
       try {
@@ -184,7 +188,7 @@ export default function Dashboard() {
     };
 
     loadData();
-  }, [isSignedIn, buildUsage]);
+  }, [isLoaded, isSignedIn, buildUsage]);
 
   // Update usage data when filter changes
   useEffect(() => {

@@ -34,7 +34,7 @@ interface PaginationInfo {
 export default function ResultsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isSignedIn } = useUser();
+  const { isSignedIn, isLoaded } = useUser();
 
   const [results, setResults] = useState<ScanResult[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
@@ -44,7 +44,11 @@ export default function ResultsClient() {
   const currentPage = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isSignedIn) {
+      window.location.href = "/login";
+      return;
+    }
 
     const loadResults = async () => {
       try {
@@ -63,7 +67,7 @@ export default function ResultsClient() {
     };
 
     loadResults();
-  }, [isSignedIn, currentPage]);
+  }, [isLoaded, isSignedIn, currentPage]);
 
   const handlePrevious = () => {
     if (pagination?.hasPrevPage) {

@@ -32,10 +32,14 @@ export default function HistoryPage() {
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { isSignedIn } = useUser();
+  const { isSignedIn, isLoaded } = useUser();
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isSignedIn) {
+      window.location.href = "/login";
+      return;
+    }
 
     const loadScans = async () => {
       try {
@@ -67,7 +71,7 @@ export default function HistoryPage() {
     };
 
     loadScans();
-  }, [isSignedIn]);
+  }, [isLoaded, isSignedIn]);
 
   const filteredScans =
     activeTab === "All scans" ? scans : scans.filter((scan) => scan.status === activeTab);
