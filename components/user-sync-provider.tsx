@@ -3,10 +3,9 @@ HEAD
 
 import { useUser } from "@clerk/nextjs";
 import { useEffect, useRef } from "react";
-
+"use client";
 import { useUser, useOrganizationList } from "@clerk/nextjs";
 import { useEffect } from "react";
- d7ee7e0 (fix: clerk redirect urls and mongo uri)
 import { syncUserToDb } from "@/lib/api";
 
 export default function UserSyncProvider({
