@@ -78,7 +78,7 @@ interface DashboardStats {
 // ─── Data fetching hooks ─────────────────────────────────────────────────────
 
 function useBackofficeData(duration: string) {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const [scans, setScans] = useState<Scan[]>([]);
   const [clients, setClients] = useState<ClientCredit[]>([]);
   const [fpItems, setFpItems] = useState<FPItem[]>([]);
@@ -106,7 +106,7 @@ function useBackofficeData(duration: string) {
 
   useEffect(() => {
     async function fetchData() {
-      if (!user) return;
+      if (!isLoaded || !user) return;
       
       setLoading(true);
 
@@ -229,7 +229,7 @@ function useBackofficeData(duration: string) {
     }, 60000);
 
     return () => clearInterval(pollInterval);
-  }, [user, dateRange]);
+  }, [isLoaded, user, dateRange]);
 
   return { scans, detectionScans, clients, fpItems, alerts, apiKeys, webhooks, stats, loading, setScans, setClients, setApiKeys, setWebhooks, setStats };
 }
@@ -1156,7 +1156,35 @@ export default function BackofficePage() {
   const [duration, setDuration] = useState("Last 30 days");
   const { scans, detectionScans, fpItems, clients, alerts, apiKeys, webhooks, stats, setScans, setClients, setApiKeys, setWebhooks, setStats } = useBackofficeData(duration);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const router = useRouter();
   const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+  // Gate access — check admin allowlist before rendering anything
+  useEffect(() => {
+    fetch("/api/admin/access", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.allowed) {
+          setIsAdmin(true);
+        } else {
+          router.replace("/");
+        }
+      })
+      .catch(() => router.replace("/"))
+      .finally(() => setAdminChecked(true));
+  }, [router]);
+
+  if (!adminChecked) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "var(--color-text-secondary)", fontSize: 14 }}>
+        Checking access...
+      </div>
+    );
+  }
+
+  if (!isAdmin) return null;
 
   function exportToCSV() {
     const csvData = scans.map(s => ({

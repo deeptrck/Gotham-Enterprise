@@ -38,10 +38,10 @@ export async function POST(req: NextRequest) {
       {
         $set: { clerkId: userId, email, fullName, imageUrl },
         $setOnInsert: {
-          credits: 10,
+          credits: 0,
           creditsUsed: 0,
           plan: "trial",
-          trialUsed: true,
+          trialUsed: false,
         },
       },
       { upsert: true, new: true }
