@@ -27,7 +27,7 @@ export default function UserSyncProvider({
       imageUrl: user.imageUrl,
     }).catch(() => {});
 
-    if (userMemberships?.data?.length === 0) {
+   if (userMemberships?.data?.length === 0 && createOrganization && setActive) {
       const domain = email.split("@")[1]?.split(".")[0] || "my-org";
       const orgName = domain.charAt(0).toUpperCase() + domain.slice(1);
 
