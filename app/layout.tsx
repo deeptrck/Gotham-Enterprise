@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider afterSignInUrl="/dashboard" afterSignUpUrl="/dashboard">
       <html lang="en" suppressHydrationWarning>
         <body
           className={`${inter.className} min-h-screen bg-background text-slate-900 dark:text-slate-100`}

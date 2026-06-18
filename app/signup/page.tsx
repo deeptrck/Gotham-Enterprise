@@ -101,7 +101,7 @@ async function handleSubmit(e: React.FormEvent) {
       await signUp.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/",
+        redirectUrlComplete: "/dashboard",
       });
     } catch (e: unknown) {
       console.error(e);
