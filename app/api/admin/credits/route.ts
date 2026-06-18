@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { Payment } from "@/lib/models/Payment";
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
       return total > 0 && ((u.creditsUsed || 0) / total) * 100 >= 90;
     });
     const nearLimitCount = nearLimitUsers.length;
-    const nearLimitNames = nearLimitUsers.map((u) => u.fullName || u.email || "Unknown").join(" · ");
+    const nearLimitNames = nearLimitUsers.map((u) => u.fullName || u.email || "Unknown").join(" Â· ");
 
     // Group by plan
     const byPlan: Record<string, { count: number; credits: number; used: number }> = {};
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       byPlan[plan].used += u.creditsUsed || 0;
     });
 
-    // ── Monthly credit usage (rolling 12 complete months) ──────────────────
+    // â”€â”€ Monthly credit usage (rolling 12 complete months) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const now = new Date();
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ── Resolve user names for ledger enrichment ──────────────────────────
+    // â”€â”€ Resolve user names for ledger enrichment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const allUsers = await User.find({}, { clerkId: 1, fullName: 1, email: 1 }).lean();
     const userMap = new Map<string, string>();
     for (const u of allUsers) {
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Always additive — credits + creditsUsed must remain consistent
+    // Always additive â€” credits + creditsUsed must remain consistent
     const newCredits = (user.credits || 0) + amount;
 
     await User.updateOne(

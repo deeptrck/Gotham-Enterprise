@@ -1,7 +1,7 @@
-import { connectToDatabase } from "@/lib/db";
+﻿import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import * as Sentry from "@sentry/nextjs";
 
 export async function POST(req: NextRequest) {
@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
 
     if (!userId) {
-      // Don’t hard-fail during OAuth/login while Clerk session cookies are establishing.
+      // Donâ€™t hard-fail during OAuth/login while Clerk session cookies are establishing.
       // This prevents the UI from erroring; sync can be retried once authenticated.
       return NextResponse.json({ success: true, skipped: true }, { status: 200 });
     }

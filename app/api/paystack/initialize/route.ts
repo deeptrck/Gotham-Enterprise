@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import * as Sentry from "@sentry/nextjs";

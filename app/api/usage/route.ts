@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { dynamoDocClient, getDynamoTableName } from "@/lib/aws/dynamo";
 

@@ -1,4 +1,5 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+﻿import { currentUser } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import AdminDashboardClient from "./AdminDashboardClient";
 import { getAdminEmailAllowlist, isEmailAllowlisted } from "@/lib/adminAccess";

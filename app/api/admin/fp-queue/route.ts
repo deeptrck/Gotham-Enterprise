@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 
@@ -51,10 +51,10 @@ export async function GET(req: NextRequest) {
       return {
         id: scan._id,
         scan_id: scan.scanId,
-        icon: scan.fileType === "video" ? "🎬" : scan.fileType === "audio" ? "🎙" : "🖼",
-        name: `${scan.fileName} — ${scan.userId.slice(0, 8)}`,
-        detail: `Flagged: ${scan.status?.toLowerCase()} · Conf: ${scan.confidenceScore}% · Auto-escalated`,
-        meta: `${scan.scanId} · ${scan.fileType} · ${scan.fileName}`,
+        icon: scan.fileType === "video" ? "ðŸŽ¬" : scan.fileType === "audio" ? "ðŸŽ™" : "ðŸ–¼",
+        name: `${scan.fileName} â€” ${scan.userId.slice(0, 8)}`,
+        detail: `Flagged: ${scan.status?.toLowerCase()} Â· Conf: ${scan.confidenceScore}% Â· Auto-escalated`,
+        meta: `${scan.scanId} Â· ${scan.fileType} Â· ${scan.fileName}`,
         type: isFP ? "fp" : "fn",
         confidence: scan.confidenceScore,
         status: scan.reviewStatus || "pending",

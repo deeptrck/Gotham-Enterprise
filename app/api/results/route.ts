@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { getJobMeta, getJobRdAnalysis, listUserJobMeta } from "@/lib/fakecatcherStore";
 import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
