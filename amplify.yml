@@ -7,6 +7,9 @@ frontend:
     build:
       commands:
         - npm run build
+        - cp .next/required-server-files.json .next/standalone/
+        - cp -r .next/static .next/standalone/.next/static
+        - cp -r public .next/standalone/public
     postBuild:
       commands:
         - rm -rf .next/cache
