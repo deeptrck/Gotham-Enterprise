@@ -11,16 +11,9 @@ frontend:
       commands:
         - rm -rf .next/cache
   artifacts:
-    baseDirectory: .next
+    baseDirectory: .next/standalone
     files:
-      - server/**/*
-      - static/**/*
-      - standalone/**/*
-      - BUILD_ID
-      - build-manifest.json
-      - prerender-manifest.json
-      - routes-manifest.json
-      - required-server-files.json
+      - '**/*'
   cache:
     paths:
       - node_modules/**/*
