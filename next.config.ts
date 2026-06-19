@@ -2,6 +2,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // DO NOT put server-only secrets (CLERK_SECRET_KEY, MONGODB_URI, etc.) in the `env` block.
   // The `env` block is for build-time constants that get inlined into the CLIENT bundle.
   // Putting secrets there exposes them to the browser and can also cause Clerk to
