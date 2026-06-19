@@ -1,0 +1,109 @@
+2026-06-18T22:36:00.860Z [INFO]: # Build environment configured with Standard build compute type: 8GiB Memory, 4vCPUs, 128GB Disk Space
+2026-06-18T22:36:01.307Z [INFO]: # Cloning repository: git@github.com:deeptrck/Gotham-Enterprise.git
+2026-06-18T22:36:01.793Z [INFO]: 
+2026-06-18T22:36:01.793Z [INFO]: Cloning into 'Gotham-Enterprise'...
+2026-06-18T22:36:01.794Z [INFO]: # Switching to commit: 36a07a850fcf166c9e0e5f9dd8fa52a2d82a3f9e
+2026-06-18T22:36:01.813Z [INFO]: Note: switching to '36a07a850fcf166c9e0e5f9dd8fa52a2d82a3f9e'.
+                                 You are in 'detached HEAD' state. You can look around, make experimental
+                                 changes and commit them, and you can discard any commits you make in this
+                                 state without impacting any branches by switching back to a branch.
+                                 If you want to create a new branch to retain commits you create, you may
+                                 do so (now or later) by using -c with the switch command. Example:
+                                 git switch -c <new-branch-name>
+                                 Or undo this operation with:
+                                 git switch -
+                                 Turn off this advice by setting config variable advice.detachedHead to false
+                                 HEAD is now at 36a07a8 fix: remove git conflict garbage from user-sync-provider
+2026-06-18T22:36:01.859Z [INFO]: Successfully cleaned up Git credentials
+2026-06-18T22:36:01.859Z [INFO]: # Checking for Git submodules at: /codebuild/output/src3163860661/src/Gotham-Enterprise/.gitmodules
+2026-06-18T22:36:01.868Z [INFO]: # Retrieving environment cache...
+2026-06-18T22:36:01.952Z [INFO]: # Retrieved environment cache
+2026-06-18T22:36:01.952Z [INFO]: ---- Setting Up SSM Secrets ----
+2026-06-18T22:36:01.952Z [INFO]: SSM params {"Path":"/amplify/d2jymp2g4whttl/prod/","WithDecryption":true}
+2026-06-18T22:36:02.736Z [INFO]: # No package override configuration found.
+2026-06-18T22:36:02.741Z [INFO]: # Retrieving cache...
+2026-06-18T22:36:19.492Z [INFO]: # Extracting cache...
+2026-06-18T22:36:33.170Z [INFO]: # Extraction completed
+2026-06-18T22:36:33.349Z [INFO]: # Retrieved cache
+2026-06-18T22:36:54.570Z [INFO]: ## Starting Backend Build
+                                 ## Checking for associated backend environment...
+                                 ## Backend environment association found
+2026-06-18T22:36:57.137Z [INFO]: [0mAmplify AppID found: d2jymp2g4whttl. Amplify App name is: gotham[0m
+2026-06-18T22:36:57.208Z [INFO]: [0mBackend environment prod found in Amplify Console app: gotham[0m
+2026-06-18T22:36:58.653Z [WARNING]: - Fetching updates to backend environment: prod from the cloud.
+2026-06-18T22:36:59.084Z [WARNING]: ✔ Successfully pulled backend environment prod from the cloud.
+2026-06-18T22:36:59.115Z [INFO]: ✅
+2026-06-18T22:37:01.348Z [INFO]: [33mNote: It is recommended to run this command from the root of your app directory[39m
+2026-06-18T22:37:01.492Z [WARNING]: - Initializing your environment: prod
+2026-06-18T22:37:01.960Z [WARNING]: ✔ Initialized provider successfully.
+2026-06-18T22:37:03.727Z [WARNING]: - Uploading files.
+2026-06-18T22:37:04.026Z [WARNING]: - Uploading files.
+2026-06-18T22:37:04.162Z [WARNING]: - Uploading files.
+2026-06-18T22:37:04.219Z [INFO]: 
+2026-06-18T22:37:04.220Z [INFO]: 
+2026-06-18T22:37:04.465Z [INFO]: ✅ Initialized your environment successfully.
+2026-06-18T22:37:04.465Z [INFO]: ✅ Your project has been successfully initialized and connected to the cloud!
+                                 Some next steps:
+                                 "amplify status" will show you what you've added already and if it's locally configured or deployed
+                                 "amplify add <category>" will allow you to add features like user login or a backend API
+                                 "amplify push" will build all your local backend resources and provision it in the cloud
+                                 "amplify console" to open the Amplify Console and view your project status
+                                 "amplify publish" will build all your local backend and frontend resources (if you have hosting category added) and provision it in the cloud
+                                 Pro tip:
+                                 Try "amplify add api" to create a backend API and then "amplify push" to deploy everything
+2026-06-18T22:37:05.996Z [INFO]: ## Completed Backend Build
+2026-06-18T22:37:06.001Z [INFO]: {"backendDuration": 11}
+                                 ## Starting Frontend Build
+                                 # Starting phase: preBuild
+                                 # Executing command: npm ci
+2026-06-18T22:37:25.586Z [WARNING]: npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+2026-06-18T22:39:22.262Z [INFO]: added 810 packages, and audited 811 packages in 2m
+2026-06-18T22:39:22.270Z [INFO]: 189 packages are looking for funding
+                                 run `npm fund` for details
+2026-06-18T22:39:22.640Z [INFO]: 34 vulnerabilities (2 low, 15 moderate, 13 high, 4 critical)
+                                 To address issues that do not require attention, run:
+                                 npm audit fix
+                                 To address all issues (including breaking changes), run:
+                                 npm audit fix --force
+                                 Run `npm audit` for details.
+2026-06-18T22:39:22.688Z [INFO]: # Completed phase: preBuild
+                                 # Starting phase: build
+                                 # Executing command: npm run build
+2026-06-18T22:39:22.789Z [INFO]: > gotham@0.1.0 build
+                                 > next build
+2026-06-18T22:39:23.870Z [INFO]: ⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+2026-06-18T22:39:23.886Z [INFO]: Attention: Next.js now collects completely anonymous telemetry regarding usage.
+2026-06-18T22:39:23.886Z [INFO]: This information is used to shape Next.js' roadmap and prioritize features.
+                                 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+                                 https://nextjs.org/telemetry
+2026-06-18T22:39:23.896Z [INFO]: ▲ Next.js 16.1.1 (Turbopack)
+2026-06-18T22:39:23.897Z [INFO]: - Experiments (use with caution):
+                                 · clientTraceMetadata
+2026-06-18T22:39:23.897Z [INFO]: 
+2026-06-18T22:39:24.009Z [INFO]: Creating an optimized production build ...
+2026-06-18T22:39:49.010Z [WARNING]: 
+2026-06-18T22:39:49.017Z [WARNING]: > Build error occurred
+                                    Error: Turbopack build failed with 1 errors:
+                                    ./components/user-sync-provider.tsx:34:13
+                                    Parsing ecmascript source code failed
+                                    [0m [90m 32 |[39m   useEffect(() [33m=>[39m {
+                                    [90m 33 |[39m     [36mif[39m ([33m![39misSignedIn [33m||[39m [33m![39muser) [36mreturn[39m[33m;[39m
+                                    [31m[1m>[22m[39m[90m 34 |[39m d7ee7e0 (fix[33m:[39m clerk redirect urls and mongo uri)
+                                    [90m    |[39m             [31m[1m^[22m[39m
+                                    [90m 35 |[39m
+                                    [90m 36 |[39m     [36mconst[39m email [33m=[39m user[33m.[39mprimaryEmailAddress[33m?[39m[33m.[39memailAddress[33m?[39m[33m.[39mtrim()[33m;[39m
+                                    [90m 37 |[39m     [36mif[39m ([33m![39memail) [36mreturn[39m[33m;[39m[0m
+                                    Expected ',', got ':'
+                                    Import trace:
+                                    Server Component:
+                                    ./components/user-sync-provider.tsx
+                                    ./app/layout.tsx
+                                    at <unknown> (./components/user-sync-provider.tsx:34:13)
+2026-06-18T22:39:49.215Z [ERROR]: !!! Build failed
+2026-06-18T22:39:49.215Z [INFO]: Please read more about Amplify Hosting's support for SSR frameworks to find if your build failure is related to an unsupported feature: https://docs.aws.amazon.com/amplify/latest/userguide/amplify-ssr-framework-support.html. You may also find this troubleshooting guide useful: https://docs.aws.amazon.com/amplify/latest/userguide/troubleshooting-ssr-deployment.html
+2026-06-18T22:39:49.215Z [ERROR]: !!! Error: Command failed with exit code 1
+2026-06-18T22:39:49.215Z [INFO]: # Starting environment caching...
+2026-06-18T22:39:49.215Z [INFO]: # Uploading environment cache artifact...
+2026-06-18T22:39:49.299Z [INFO]: # Uploaded environment cache artifact
+2026-06-18T22:39:49.299Z [INFO]: # Environment caching completed
+

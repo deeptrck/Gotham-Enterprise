@@ -52,17 +52,13 @@ export default function UserSyncProvider({
       const domain = email.split("@")[1]?.split(".")[0] || "my-org";
       const orgName = domain.charAt(0).toUpperCase() + domain.slice(1);
 
-      // Avoid calling potentially-undefined functions during initial Clerk load
-      if (!createOrganization || !setActive) return;
-
-      void createOrganization({ name: orgName })
+      createOrganization({ name: orgName })
         .then((org) => {
           setActive({ organization: org.id });
         })
         .catch(() => {});
     }
   }, [isSignedIn, user, userMemberships?.data?.length, createOrganization, setActive]);
-
 
   return <>{children}</>;
 }

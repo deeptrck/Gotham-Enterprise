@@ -1,0 +1,199 @@
+2026-06-18T23:07:06.727Z [INFO]: # Build environment configured with Standard build compute type: 8GiB Memory, 4vCPUs, 128GB Disk Space
+2026-06-18T23:07:07.268Z [INFO]: # Cloning repository: git@github.com:deeptrck/Gotham-Enterprise.git
+2026-06-18T23:07:07.874Z [INFO]: 
+2026-06-18T23:07:07.875Z [INFO]: Cloning into 'Gotham-Enterprise'...
+2026-06-18T23:07:07.875Z [INFO]: # Switching to commit: 85adcb68aecb64e233420223c6dbf37c33df196d
+2026-06-18T23:07:07.894Z [INFO]: Note: switching to '85adcb68aecb64e233420223c6dbf37c33df196d'.
+                                 You are in 'detached HEAD' state. You can look around, make experimental
+                                 changes and commit them, and you can discard any commits you make in this
+                                 state without impacting any branches by switching back to a branch.
+                                 If you want to create a new branch to retain commits you create, you may
+                                 do so (now or later) by using -c with the switch command. Example:
+                                 git switch -c <new-branch-name>
+                                 Or undo this operation with:
+                                 git switch -
+                                 Turn off this advice by setting config variable advice.detachedHead to false
+                                 HEAD is now at 85adcb6 fix: guard createOrganization undefined check
+2026-06-18T23:07:07.934Z [INFO]: Successfully cleaned up Git credentials
+2026-06-18T23:07:07.934Z [INFO]: # Checking for Git submodules at: /codebuild/output/src1182648710/src/Gotham-Enterprise/.gitmodules
+2026-06-18T23:07:07.942Z [INFO]: # Retrieving environment cache...
+2026-06-18T23:07:08.016Z [INFO]: # Retrieved environment cache
+2026-06-18T23:07:08.017Z [INFO]: ---- Setting Up SSM Secrets ----
+2026-06-18T23:07:08.017Z [INFO]: SSM params {"Path":"/amplify/d2jymp2g4whttl/prod/","WithDecryption":true}
+2026-06-18T23:07:08.818Z [INFO]: # No package override configuration found.
+2026-06-18T23:07:08.822Z [INFO]: # Retrieving cache...
+2026-06-18T23:07:25.028Z [INFO]: # Extracting cache...
+2026-06-18T23:07:37.866Z [INFO]: # Extraction completed
+2026-06-18T23:07:38.058Z [INFO]: # Retrieved cache
+2026-06-18T23:07:56.885Z [INFO]: ## Starting Backend Build
+                                 ## Checking for associated backend environment...
+                                 ## Backend environment association found
+2026-06-18T23:07:59.289Z [INFO]: [0mAmplify AppID found: d2jymp2g4whttl. Amplify App name is: gotham[0m
+2026-06-18T23:07:59.354Z [INFO]: [0mBackend environment prod found in Amplify Console app: gotham[0m
+2026-06-18T23:08:00.710Z [WARNING]: - Fetching updates to backend environment: prod from the cloud.
+2026-06-18T23:08:01.146Z [WARNING]: ✔ Successfully pulled backend environment prod from the cloud.
+2026-06-18T23:08:01.176Z [INFO]: ✅
+2026-06-18T23:08:03.316Z [INFO]: [33mNote: It is recommended to run this command from the root of your app directory[39m
+2026-06-18T23:08:03.455Z [WARNING]: - Initializing your environment: prod
+2026-06-18T23:08:03.928Z [WARNING]: ✔ Initialized provider successfully.
+2026-06-18T23:08:05.799Z [WARNING]: - Uploading files.
+2026-06-18T23:08:06.100Z [WARNING]: - Uploading files.
+2026-06-18T23:08:06.162Z [WARNING]: - Uploading files.
+2026-06-18T23:08:06.211Z [INFO]: 
+2026-06-18T23:08:06.211Z [INFO]: 
+2026-06-18T23:08:06.451Z [INFO]: ✅ Initialized your environment successfully.
+2026-06-18T23:08:06.452Z [INFO]: ✅ Your project has been successfully initialized and connected to the cloud!
+                                 Some next steps:
+                                 "amplify status" will show you what you've added already and if it's locally configured or deployed
+                                 "amplify add <category>" will allow you to add features like user login or a backend API
+                                 "amplify push" will build all your local backend resources and provision it in the cloud
+                                 "amplify console" to open the Amplify Console and view your project status
+                                 "amplify publish" will build all your local backend and frontend resources (if you have hosting category added) and provision it in the cloud
+                                 Pro tip:
+                                 Try "amplify add api" to create a backend API and then "amplify push" to deploy everything
+2026-06-18T23:08:07.899Z [INFO]: ## Completed Backend Build
+2026-06-18T23:08:07.904Z [INFO]: {"backendDuration": 11}
+                                 ## Starting Frontend Build
+                                 # Starting phase: preBuild
+                                 # Executing command: npm ci
+2026-06-18T23:08:26.593Z [WARNING]: npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+2026-06-18T23:10:15.701Z [INFO]: added 810 packages, and audited 811 packages in 2m
+2026-06-18T23:10:15.709Z [INFO]: 189 packages are looking for funding
+                                 run `npm fund` for details
+2026-06-18T23:10:16.052Z [INFO]: 34 vulnerabilities (2 low, 15 moderate, 13 high, 4 critical)
+                                 To address issues that do not require attention, run:
+                                 npm audit fix
+                                 To address all issues (including breaking changes), run:
+                                 npm audit fix --force
+                                 Run `npm audit` for details.
+2026-06-18T23:10:16.096Z [INFO]: # Completed phase: preBuild
+                                 # Starting phase: build
+                                 # Executing command: npm run build
+2026-06-18T23:10:16.199Z [INFO]: > gotham@0.1.0 build
+                                 > next build
+2026-06-18T23:10:17.260Z [INFO]: ⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+2026-06-18T23:10:17.266Z [INFO]: Attention: Next.js now collects completely anonymous telemetry regarding usage.
+2026-06-18T23:10:17.266Z [INFO]: This information is used to shape Next.js' roadmap and prioritize features.
+                                 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+                                 https://nextjs.org/telemetry
+2026-06-18T23:10:17.276Z [INFO]: ▲ Next.js 16.1.1 (Turbopack)
+2026-06-18T23:10:17.276Z [INFO]: - Experiments (use with caution):
+                                 · clientTraceMetadata
+2026-06-18T23:10:17.276Z [INFO]: 
+2026-06-18T23:10:17.385Z [INFO]: Creating an optimized production build ...
+2026-06-18T23:10:41.716Z [INFO]: ✓ Compiled successfully in 23.6s
+2026-06-18T23:10:41.724Z [INFO]: Running next.config.js provided runAfterProductionCompile ...
+2026-06-18T23:10:42.065Z [INFO]: ✓ Completed runAfterProductionCompile in 348ms
+2026-06-18T23:10:42.067Z [INFO]: Running TypeScript ...
+2026-06-18T23:10:51.760Z [INFO]: Collecting page data using 3 workers ...
+2026-06-18T23:10:52.841Z [INFO]: Generating static pages using 3 workers (0/61) ...
+2026-06-18T23:10:52.932Z [INFO]: Generating static pages using 3 workers (15/61)
+2026-06-18T23:10:53.293Z [INFO]: Generating static pages using 3 workers (30/61)
+2026-06-18T23:10:53.464Z [WARNING]: The width(-1) and height(-1) of chart should be greater than 0,
+                                    please check the style of container, or the props width(100%) and height(100%),
+                                    or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+                                    height and width.
+2026-06-18T23:10:53.465Z [WARNING]: The width(-1) and height(-1) of chart should be greater than 0,
+                                    please check the style of container, or the props width(100%) and height(100%),
+                                    or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+                                    height and width.
+2026-06-18T23:10:53.542Z [WARNING]: The width(-1) and height(-1) of chart should be greater than 0,
+                                    please check the style of container, or the props width(100%) and height(100%),
+                                    or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+                                    height and width.
+2026-06-18T23:10:53.719Z [WARNING]: The width(-1) and height(-1) of chart should be greater than 0,
+                                    please check the style of container, or the props width(100%) and height(100%),
+                                    or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+                                    height and width.
+2026-06-18T23:10:53.720Z [WARNING]: The width(-1) and height(-1) of chart should be greater than 0,
+                                    please check the style of container, or the props width(100%) and height(100%),
+                                    or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+                                    height and width.
+2026-06-18T23:10:53.759Z [INFO]: Generating static pages using 3 workers (45/61)
+2026-06-18T23:10:53.954Z [INFO]: ✓ Generating static pages using 3 workers (61/61) in 1113.6ms
+2026-06-18T23:10:53.962Z [INFO]: Finalizing page optimization ...
+2026-06-18T23:10:54.478Z [INFO]: 
+2026-06-18T23:10:54.481Z [INFO]: Route (app)
+                                 ┌ ○ /
+                                 ├ ○ /_not-found
+                                 ├ ○ /admin
+                                 ├ ○ /admin/bugs
+                                 ├ ƒ /admin/dashboard
+                                 ├ ƒ /api/admin/access
+                                 ├ ƒ /api/admin/active-users
+                                 ├ ƒ /api/admin/alerts
+                                 ├ ƒ /api/admin/api-keys
+                                 ├ ƒ /api/admin/api-usage
+                                 ├ ƒ /api/admin/audit-log
+                                 ├ ƒ /api/admin/clients
+                                 ├ ƒ /api/admin/compliance-snapshot
+                                 ├ ƒ /api/admin/credits
+                                 ├ ƒ /api/admin/fp-queue
+                                 ├ ƒ /api/admin/model-feedback
+                                 ├ ƒ /api/admin/pipeline
+                                 ├ ƒ /api/admin/scans
+                                 ├ ƒ /api/admin/stats
+                                 ├ ƒ /api/admin/webhooks
+                                 ├ ƒ /api/bugs
+                                 ├ ƒ /api/bugs/[id]
+                                 ├ ƒ /api/debug-auth
+                                 ├ ƒ /api/generate-key
+                                 ├ ƒ /api/paystack/initialize
+                                 ├ ƒ /api/paystack/verify
+                                 ├ ƒ /api/paystack/webhook
+                                 ├ ƒ /api/results
+                                 ├ ƒ /api/results/[id]
+                                 ├ ƒ /api/results/[id]/feedback
+                                 ├ ƒ /api/revoke-key
+                                 ├ ƒ /api/scans
+                                 ├ ƒ /api/sentry-example-api
+                                 ├ ƒ /api/usage
+                                 ├ ƒ /api/users/dashboard
+                                 ├ ƒ /api/users/sync
+                                 ├ ƒ /api/users/trial
+                                 ├ ○ /backoffice
+                                 ├ ○ /backoffice/alerts
+                                 ├ ○ /backoffice/api-keys
+                                 ├ ○ /backoffice/api-usage
+                                 ├ ○ /backoffice/audit-log
+                                 ├ ○ /backoffice/clients
+                                 ├ ○ /backoffice/credits
+                                 ├ ○ /backoffice/forensics
+                                 ├ ○ /backoffice/fp-queue
+                                 ├ ○ /backoffice/model-feedback
+                                 ├ ○ /backoffice/pipeline
+                                 ├ ○ /backoffice/scan-log
+                                 ├ ○ /backoffice/settings
+                                 ├ ○ /backoffice/webhooks
+                                 ├ ○ /console
+                                 ├ ○ /dashboard
+                                 ├ ○ /forgot-password
+                                 ├ ○ /history
+                                 ├ ○ /login
+                                 ├ ƒ /payment-success
+                                 ├ ○ /pricing-billing
+                                 ├ ○ /report-bug
+                                 ├ ○ /results
+                                 ├ ƒ /results/[id]
+                                 ├ ○ /results/bulk
+                                 ├ ○ /sentry-example-page
+                                 ├ ○ /signup
+                                 └ ○ /sso-callback
+                                 ƒ Proxy (Middleware)
+2026-06-18T23:10:54.481Z [INFO]: ○  (Static)   prerendered as static content
+                                 ƒ  (Dynamic)  server-rendered on demand
+2026-06-18T23:10:54.521Z [INFO]: # Completed phase: build
+                                 ## Completed Frontend Build
+2026-06-18T23:10:54.738Z [INFO]: ## Build completed successfully
+2026-06-18T23:10:54.739Z [INFO]: # Starting caching...
+2026-06-18T23:10:54.747Z [INFO]: # Creating cache artifact...
+2026-06-18T23:11:07.989Z [INFO]: # Created cache artifact
+2026-06-18T23:11:08.077Z [INFO]: # Uploading cache artifact...
+2026-06-18T23:11:23.289Z [INFO]: # Uploaded cache artifact
+2026-06-18T23:11:23.393Z [INFO]: # Caching completed
+2026-06-18T23:12:05.566Z [ERROR]: !!! CustomerError: The size of the build output (256010872) exceeds the max allowed size of230686720 bytes. Please reduce the size ofyour build output and try again.
+2026-06-18T23:12:05.692Z [INFO]: # Starting environment caching...
+2026-06-18T23:12:05.692Z [INFO]: # Uploading environment cache artifact...
+2026-06-18T23:12:05.773Z [INFO]: # Uploaded environment cache artifact
+2026-06-18T23:12:05.773Z [INFO]: # Environment caching completed
+
