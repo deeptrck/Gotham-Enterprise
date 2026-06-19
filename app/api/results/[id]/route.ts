@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { getJobFeedbackSummary, getJobMeta, getJobRdAnalysis, getUserJobFeedback, getJobFakeCatcherAnalysis } from "@/lib/fakecatcherStore";
 import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
@@ -199,19 +199,29 @@ export async function GET(
       return NextResponse.json({ error: "Result not found" }, { status: 404 });
     }
 
-    // Check if this is a cached scan (either RD-only or FakeCatcher image)
-    const isCachedScan = meta?.source === "rd-only" || meta?.source === "fakecatcher" || id.startsWith("rd-") || id.startsWith("fc-img-");
+    // First, check MongoDB — it's the durable source of truth for every scan
+    // (image, video, audio). The in-memory store (`meta`) is volatile and gets
+    // wiped on server restarts / Turbopack route recompiles in dev, so we must
+    // not rely on it (or on ID-prefix guessing) to decide whether a result exists.
+    let mongoDoc;
+    try {
+      await connectToDatabase();
+      mongoDoc = await VerificationResult.findOne({ scanId: id, userId });
+    } catch (dbError) {
+      console.warn("Failed to fetch from MongoDB:", dbError);
+    }
+
+    // Check if this is a cached scan (either RD-only or FakeCatcher image),
+    // OR if we found a persisted MongoDB record for it (covers the case where
+    // in-memory metadata was lost but the scan completed and was saved).
+    const isCachedScan =
+      meta?.source === "rd-only" ||
+      meta?.source === "fakecatcher" ||
+      id.startsWith("rd-") ||
+      id.startsWith("fc-img-") ||
+      Boolean(mongoDoc);
 
     if (isCachedScan) {
-      // Try to get from MongoDB for persistent analysis data
-      let mongoDoc;
-      try {
-        await connectToDatabase();
-        mongoDoc = await VerificationResult.findOne({ scanId: id, userId });
-      } catch (dbError) {
-        console.warn("Failed to fetch from MongoDB:", dbError);
-      }
-
       const responsePayload = buildRdOnlyPayload(
         id,
         meta?.fileName || mongoDoc?.fileName || `media-${id}`,
