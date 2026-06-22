@@ -1,4 +1,3 @@
-import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -17,19 +16,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-const sentryConfig = withSentryConfig(nextConfig, {
-  org: "deeptrack",
-  project: "deeptrack-gotham-enterprise",
-  silent: !process.env.CI,
-  widenClientFileUpload: true,
-  webpack: {
-    reactComponentAnnotation: {
-      enabled: true,
-    },
-    treeshake: {
-      removeDebugLogging: true,
-    },
-  },
-});
-
-export default sentryConfig;
+export default nextConfig;
