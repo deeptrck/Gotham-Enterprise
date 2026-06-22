@@ -7,6 +7,8 @@ frontend:
     build:
       commands:
         - npm run build
+        - echo "=== standalone contents ===" && ls .next/standalone || echo "standalone missing"
+        - echo "=== standalone/.next contents ===" && ls .next/standalone/.next || echo "standalone/.next missing"
         - cp .next/required-server-files.json .next/standalone/required-server-files.json
         - cp .next/required-server-files.json .next/standalone/.next/required-server-files.json
         - cp -r .next/static .next/standalone/.next/static
