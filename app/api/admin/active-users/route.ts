@@ -45,6 +45,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    await connectToDatabase();
+
     // Check admin access
     const user = await User.findOne({ clerkId: userId }).select("email").lean() as { email?: string } | null;
     if (!user?.email) {
@@ -62,8 +64,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         { status: 403 }
       );
     }
-
-    await connectToDatabase();
 
     // Get query parameters
     const url = new URL(req.url);

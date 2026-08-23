@@ -17,9 +17,9 @@ import path from "path";
 
 
 const BACKEND_API_URL = (
-  process.env.BACKEND_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://facedetectionsystem.onrender.com"
+  process.env.BACKEND_API_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+  ""
 ).replace(/\/$/, "");
 
 function buildBackendUrl(path: string) {
@@ -36,8 +36,9 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
 );
 
 const CREDIT_COST_PER_SCAN = 1;
-const SAGEMAKER_ENDPOINT_NAME = process.env.SAGEMAKER_ENDPOINT_NAME || "";
+const SAGEMAKER_ENDPOINT_NAME = process.env.SAGEMAKER_ENDPOINT_NAME?.trim() || "";
 const SAGEMAKER_REGION = process.env.SAGEMAKER_REGION || "us-east-1";
+const REALITY_DEFENDER_ENABLED = (process.env.REALITY_DEFENDER_ENABLED ?? "true").toLowerCase() === "true";
 const VIDEO_FRAME_SAMPLE_COUNT = 3;
 
 const sagemakerClient = new SageMakerRuntimeClient({ region: SAGEMAKER_REGION });
@@ -181,6 +182,15 @@ async function refundUserCredit(userId: string) {
 }
 
 async function postVideoWithRetry(payload: FormData, attempts = 2) {
+  if (!BACKEND_API_URL) {
+    return {
+      ok: false as const,
+      status: 503,
+      body: "Legacy video backend is not configured.",
+      contentType: "application/json",
+    };
+  }
+
   let lastStatus = 503;
   let lastBody = "";
   let lastContentType = "application/json";
@@ -259,8 +269,9 @@ export async function GET(req: NextRequest) {
     let jobsPayload: { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> } = { jobs: {} };
     const degraded: string | null = null;
 
-    try {
-      const response = await fetch(buildBackendUrl("/jobs"), {
+    if (BACKEND_API_URL) {
+      try {
+        const response = await fetch(buildBackendUrl("/jobs"), {
         method: "GET",
         headers: getForwardHeaders(req),
         cache: "no-store",
@@ -272,11 +283,12 @@ export async function GET(req: NextRequest) {
       } else {
         jobsPayload = await response.json() as { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> };
       }
-    } catch (error) {
-      // Backend unavailable, but we have cached RD-only scans - continue without error message
+          } catch (error) {
+        // Backend unavailable, but we have cached RD-only scans - continue without error message
+      }
     }
-
     const jobs = jobsPayload.jobs || {};
+
     const maxScanEntries = 200;
 
     const backendScans = Object.entries(jobs)
@@ -472,6 +484,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Video exceeds 50 MB limit" },
         { status: 413 }
+      );
+    }
+
+    // Do not charge a user for an image scan when the temporary provider is disabled
+    // and the proprietary provider adapter is not yet configured in this route.
+    if (fileType === "image" && !REALITY_DEFENDER_ENABLED) {
+      return NextResponse.json(
+        { error: "Image verification is temporarily unavailable while the Gotham model is being configured." },
+        { status: 503 }
       );
     }
 

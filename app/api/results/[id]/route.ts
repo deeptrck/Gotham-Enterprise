@@ -5,9 +5,9 @@ import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 
 const BACKEND_API_URL = (
-  process.env.BACKEND_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://facedetectionsystem.onrender.com"
+  process.env.BACKEND_API_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+  ""
 ).replace(/\/$/, "");
 const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
   5000,
@@ -239,6 +239,13 @@ export async function GET(
           userFeedback,
         },
         { status: 200 }
+      );
+    }
+
+    if (!BACKEND_API_URL) {
+      return NextResponse.json(
+        { error: "Legacy video backend is not configured and no persisted result was found." },
+        { status: 503 }
       );
     }
 

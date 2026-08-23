@@ -16,13 +16,23 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
       "dist-workers/**",
+      "amplify/backend/types/**",
       "lib/**/*.js",
       "scripts/**/*.js",
     ],
   },
   {
-    // The repository currently contains legacy TypeScript patterns.
-    // Keep lint operational while these are migrated incrementally.
+    files: [
+      "app/admin/**/*.{ts,tsx}",
+      "app/api/**/*.{ts,tsx}",
+      "app/backoffice/**/*.{ts,tsx}",
+      "app/login/**/*.{ts,tsx}",
+      "app/results/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "lib/**/*.{ts,tsx}",
+    ],
+    // These existing areas contain legacy patterns being migrated incrementally.
+    // New code outside these paths keeps the stricter Next.js defaults.
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-explicit-any": "off",
