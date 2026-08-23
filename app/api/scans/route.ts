@@ -257,7 +257,7 @@ export async function GET(req: NextRequest) {
     }
 
     let jobsPayload: { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> } = { jobs: {} };
-    let degraded: string | null = null;
+    const degraded: string | null = null;
 
     try {
       const response = await fetch(buildBackendUrl("/jobs"), {
