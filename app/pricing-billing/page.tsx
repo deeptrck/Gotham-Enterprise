@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { createPaystackTransaction, subscribeToTrial } from "@/lib/api";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { useRouter } from "next/navigation";
 import * as Sentry from "@sentry/nextjs";
 
 export default function PricingBillingPage() {
   const router = useRouter();
-  const { isSignedIn } = useUser();
+  const { user } = useUser();
+  const isSignedIn = Boolean(user);
   const [loadingRef, setLoadingRef] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -55,7 +55,9 @@ const filterOptions = [
 ];
 
 export default function Dashboard() {
-  const { isSignedIn, isLoaded } = useUser();
+  const { user, isLoading } = useUser();
+  const isSignedIn = Boolean(user);
+  const isLoaded = !isLoading;
   const [allScans, setAllScans] = useState<ApiScan[]>([]);
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [userCredits, setUserCredits] = useState(0);

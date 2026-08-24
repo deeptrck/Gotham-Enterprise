@@ -49,7 +49,7 @@ async function assignCredits(email, credits) {
     console.log(`✅ Successfully assigned ${credits} credits to ${email}`);
     console.log(`User details:`, {
       email: user.email,
-      fullName: user.fullName,
+      fullName: user.name,
       credits: user.credits,
       plan: user.plan
     });

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Check, XCircle, AlertCircle } from "lucide-react";
 import { fetchResult } from "@/lib/api";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import * as Sentry from "@sentry/nextjs";
 
 // --- Model map (same as single results page) ---
@@ -136,7 +136,8 @@ const ResultCard: React.FC<{ result: ResultData }> = ({ result }) => (
 export default function BulkResultsClient() {
   const searchParams = useSearchParams();
   const idsParam = searchParams.get("ids") || "";
-  const { isSignedIn } = useUser();
+  const { user } = useUser();
+  const isSignedIn = Boolean(user);
 
   const [results, setResults] = useState<ResultData[]>([]);
   const [loading, setLoading] = useState(true);

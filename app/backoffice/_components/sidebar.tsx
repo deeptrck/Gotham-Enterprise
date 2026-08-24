@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { useState, useEffect } from "react";
 import { LogOut } from "lucide-react";
 
@@ -143,13 +143,15 @@ export default function Sidebar() {
     fetchCounts();
   }, [user]);
 
-  const initials = user?.firstName && user?.lastName
-    ? `${user.firstName[0]}${user.lastName[0]}`
-    : user?.firstName
-    ? user.firstName.slice(0, 2).toUpperCase()
+  const firstName = user?.given_name || user?.name?.split(" ")[0] || "";
+  const lastName = user?.family_name || user?.name?.split(" ").slice(1).join(" ") || "";
+  const initials = firstName && lastName
+    ? `${firstName[0]}${lastName[0]}`.toUpperCase()
+    : firstName
+    ? firstName.slice(0, 2).toUpperCase()
     : "AD";
 
-  const displayName = user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Admin";
+  const displayName = user?.name ?? user?.email ?? "Admin";
 
   function isActive(href: string) {
     if (href === "/backoffice") return pathname === "/backoffice";

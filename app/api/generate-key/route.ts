@@ -1,6 +1,6 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/auth";
 import { auth } from "@/lib/auth";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { dynamoDocClient, getDynamoTableName } from "@/lib/aws/dynamo";

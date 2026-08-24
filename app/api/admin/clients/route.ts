@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
       return {
         id: user._id,
-        name: user.fullName || user.email || "Unknown",
+        name: user.name || user.email || "Unknown",
         email: user.email,
         plan: user.plan || "starter",
         used: creditsUsed,
@@ -140,7 +140,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({
       id: user._id,
-      name: user.fullName,
+      name: user.name,
       email: user.email,
       plan: user.plan,
       credits: user.credits,

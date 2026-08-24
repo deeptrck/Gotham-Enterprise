@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchAllResults } from "@/lib/api";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
 
@@ -34,7 +34,9 @@ interface PaginationInfo {
 export default function ResultsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded } = useUser();
+  const { user, isLoading } = useUser();
+  const isSignedIn = Boolean(user);
+  const isLoaded = !isLoading;
 
   const [results, setResults] = useState<ScanResult[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
