@@ -46,7 +46,7 @@ export default function ResultsClient() {
   const currentPage = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
 
   useEffect(() => {
-    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isLoaded) return; // Auth0 still hydrating — wait
     if (!isSignedIn) {
       window.location.href = "/login";
       return;

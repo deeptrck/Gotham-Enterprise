@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
 
     if (!userId) {
-      // Donâ€™t hard-fail during OAuth/login while Clerk session cookies are establishing.
+      // Donâ€™t hard-fail during OAuth/login while Auth0 session cookies are establishing.
       // This prevents the UI from erroring; sync can be retried once authenticated.
       return NextResponse.json({ success: true, skipped: true }, { status: 200 });
     }
@@ -31,12 +31,12 @@ export async function POST(req: NextRequest) {
     const user = await User.findOneAndUpdate(
       {
         $or: [
-          { clerkId: userId },
+          { auth0Sub: userId },
           { email },
         ],
       },
       {
-        $set: { clerkId: userId, email, fullName, imageUrl },
+        $set: { auth0Sub: userId, email, fullName, imageUrl },
         $setOnInsert: {
           credits: 0,
           creditsUsed: 0,
@@ -75,7 +75,7 @@ export async function GET() {
 
     await connectToDatabase();
 
-    const user = await User.findOne({ clerkId: userId });
+    const user = await User.findOne({ auth0Sub: userId });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });

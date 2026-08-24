@@ -37,7 +37,7 @@ export default function HistoryPage() {
   const isLoaded = !isLoading;
 
   useEffect(() => {
-    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isLoaded) return; // Auth0 still hydrating — wait
     if (!isSignedIn) {
       window.location.href = "/login";
       return;

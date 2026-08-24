@@ -3,7 +3,7 @@ import { UserAccess } from "@/lib/models/UserAccess";
 import { User } from "@/lib/models/User";
 
 export type AccessLogInput = {
-  clerkId: string;
+  auth0Sub: string;
   accessType: "page_visit" | "api_call";
   routePath: string;
   method?: string;
@@ -19,21 +19,21 @@ export async function logUserAccess(input: AccessLogInput): Promise<void> {
   try {
     await connectToDatabase();
 
-    const { clerkId, accessType, routePath, method, userAgent, ipAddress } = input;
+    const { auth0Sub, accessType, routePath, method, userAgent, ipAddress } = input;
 
     // Get user email from User model
-    const user = (await User.findOne({ clerkId }).select("email").lean()) as { email?: string } | null;
+    const user = (await User.findOne({ auth0Sub }).select("email").lean()) as { email?: string } | null;
     if (!user?.email) {
-      console.warn(`User not found for clerkId: ${clerkId}`);
+      console.warn(`User not found for auth0Sub: ${auth0Sub}`);
       return;
     }
 
     // Upsert: update lastAccessedAt if exists, create if new
     await UserAccess.findOneAndUpdate(
-      { clerkId, accessType, routePath },
+      { auth0Sub, accessType, routePath },
       {
         $set: {
-          clerkId,
+          auth0Sub,
           email: user.email,
           accessType,
           routePath,

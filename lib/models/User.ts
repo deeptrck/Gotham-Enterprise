@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IUser extends Document {
-  clerkId: string;
+  auth0Sub: string;
   email: string;
   fullName: string;
   imageUrl?: string;
@@ -16,7 +16,7 @@ export interface IUser extends Document {
 
 const userSchema = new Schema<IUser>(
   {
-    clerkId: { type: String, required: true, unique: true },
+    auth0Sub: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     fullName: { type: String, required: true },
     imageUrl: { type: String },
@@ -28,5 +28,5 @@ const userSchema = new Schema<IUser>(
   },
   { timestamps: true }
 );
-// Note: Indexes on clerkId and email are automatically created by unique: true
+// Note: Indexes on auth0Sub and email are automatically created by unique: true
 export const User = mongoose.models?.User || mongoose.model("User", userSchema);

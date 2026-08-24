@@ -99,18 +99,18 @@ export async function GET(req: NextRequest) {
     }
 
     // â”€â”€ Resolve user names for ledger enrichment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const allUsers = await User.find({}, { clerkId: 1, fullName: 1, email: 1 }).lean();
+    const allUsers = await User.find({}, { auth0Sub: 1, fullName: 1, email: 1 }).lean();
     const userMap = new Map<string, string>();
     for (const u of allUsers) {
-      if (u.clerkId) userMap.set(u.clerkId.toString(), u.fullName || u.email || "Unknown");
+      if (u.auth0Sub) userMap.set(u.auth0Sub.toString(), u.fullName || u.email || "Unknown");
       if (u._id) userMap.set(u._id.toString(), u.fullName || u.email || "Unknown");
     }
 
     // Transform ledger entries (enriched with client_name)
     const ledger = payments.map((p) => ({
       id: p._id,
-      client_id: p.clerkId || p.userId,
-      client_name: userMap.get(p.clerkId?.toString() || "") || userMap.get(p.userId?.toString() || "") || "Unknown",
+      client_id: p.auth0Sub || p.userId,
+      client_name: userMap.get(p.auth0Sub?.toString() || "") || userMap.get(p.userId?.toString() || "") || "Unknown",
       type: p.type || "purchase",
       amount: p.credits || p.amount || 0,
       note: p.reference || (p.type === "adjustment" ? "Manual adjustment" : "Transaction"),
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Find user
-    const user = await User.findOne({ clerkId: targetUserId });
+    const user = await User.findOne({ auth0Sub: targetUserId });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
     const newCredits = (user.credits || 0) + amount;
 
     await User.updateOne(
-      { clerkId: targetUserId },
+      { auth0Sub: targetUserId },
       { credits: Math.max(0, newCredits) }
     );
 

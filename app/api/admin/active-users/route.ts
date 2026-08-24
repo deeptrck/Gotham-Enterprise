@@ -8,7 +8,7 @@ import * as Sentry from "@sentry/nextjs";
 
 export interface ActiveUserInfo {
   email: string;
-  clerkId: string;
+  auth0Sub: string;
   lastAccessedAt: string;
   accessCount: number;
   recentActivities: Array<{
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     await connectToDatabase();
 
     // Check admin access
-    const user = await User.findOne({ clerkId: userId }).select("email").lean() as { email?: string } | null;
+    const user = await User.findOne({ auth0Sub: userId }).select("email").lean() as { email?: string } | null;
     if (!user?.email) {
       return NextResponse.json(
         { error: "User not found" },
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       },
       {
         $group: {
-          _id: "$clerkId",
+          _id: "$auth0Sub",
           email: { $first: "$email" },
           lastAccessedAt: { $max: "$lastAccessedAt" },
           activities: {
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const formattedUsers: ActiveUserInfo[] = activeUserAccessLogs.map(
       (user: any) => ({
         email: user.email,
-        clerkId: user._id,
+        auth0Sub: user._id,
         lastAccessedAt: user.lastAccessedAt.toISOString(),
         accessCount: user.accessCount,
         recentActivities: user.activities

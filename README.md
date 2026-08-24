@@ -1,22 +1,22 @@
 # Gotham-Enterprise
 
-Enterprise-grade dashboard and verification platform for media authenticity, built on **Next.js**, **Tailwind CSS**, **Clerk** authentication, and **MongoDB** database.
+Enterprise-grade dashboard and verification platform for media authenticity, built on **Next.js**, **Tailwind CSS**, **Auth0** authentication, and **MongoDB** database.
 
 ---
 
 ## Table of Contents
-- [About](#about)  
-- [Key Features](#key-features)  
-- [Tech Stack](#tech-stack)  
+- [About](#about)
+- [Key Features](#key-features)
+- [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
-- [Database (MongoDB)](#database-mongodb)  
-- [Authentication (Clerk)](#authentication-clerk)  
-- [Getting Started](#getting-started)  
-  - [Prerequisites](#prerequisites)  
-  - [Installation](#installation)  
-  - [Environment Variables](#environment-variables)  
-  - [Running Locally](#running-locally)  
+- [Database (MongoDB)](#database-mongodb)
+- [Authentication (Auth0)](#authentication-auth0)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Environment Variables](#environment-variables)
+  - [Running Locally](#running-locally)
   - [Building & Deployment](#building--deployment)
 
 ---
@@ -27,13 +27,13 @@ Enterprise-grade dashboard and verification platform for media authenticity, bui
 
 It provides:
 
-- A modern **Next.js App Router** architecture  
-- **MongoDB** database for persistent data storage  
-- Image & URL-based verification flows  
-- Mobile-first, vertically stacked sections for clean UX  
-- Detailed media history and analytics  
-- Real-time verification results  
-- Role-based access via **Clerk authentication**  
+- A modern **Next.js App Router** architecture
+- **MongoDB** database for persistent data storage
+- Image & URL-based verification flows
+- Mobile-first, vertically stacked sections for clean UX
+- Detailed media history and analytics
+- Real-time verification results
+- Role-based access via **Auth0 authentication**
 - User credit system for scan management
 - A sleek, minimal **dark UI** using Tailwind
 
@@ -41,23 +41,23 @@ It provides:
 
 ## Key Features
 
-- Upload **multiple images** or submit **remote URLs** for verification  
+- Upload **multiple images** or submit **remote URLs** for verification
 - **Persistent scan history** stored in MongoDB
 - **Real-time dashboard** showing credit balance and recent scans
 - **Credit system** - Each scan costs 1 credit
-- Camera capture **disabled** by default for workflow consistency  
-- Vertical mobile layout: **Upload → Results → Quick Stats**  
+- Camera capture **disabled** by default for workflow consistency
+- Vertical mobile layout: **Upload → Results → Quick Stats**
 - Enterprise-grade **Verification History**, including:
-  - Image thumbnails  
-  - Metadata  
-  - Verdict indicators  
-  - Confidence progress bars  
-  - Filtering + search  
+  - Image thumbnails
+  - Metadata
+  - Verdict indicators
+  - Confidence progress bars
+  - Filtering + search
   - Delete functionality
-- Semi-transparent, outlined cards & tables for a premium feel  
-- Full authentication integration with Clerk  
+- Semi-transparent, outlined cards & tables for a premium feel
+- Full authentication integration with Auth0
 - **MongoDB integration** for user and scan persistence
-- Ready for team dashboards and permission-based environments  
+- Ready for team dashboards and permission-based environments
 
 ---
 
@@ -69,7 +69,7 @@ It provides:
 | Language | **TypeScript** |
 | Styling | **Tailwind CSS** |
 | UI Library | **shadcn/ui**, **lucide-react** |
-| Auth | **Clerk** |
+| Auth | **Auth0** |
 | Database | **MongoDB** with **Mongoose ODM** |
 | Deployment | **Vercel** (recommended) or any Next.js-compatible host |
 
@@ -83,8 +83,8 @@ It provides:
 ```env
 MONGODB_URI=
 gotham-enterprise
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_key
-CLERK_SECRET_KEY=your_secret
+NEXT_PUBLIC_AUTH0_PUBLISHABLE_KEY=your_key
+AUTH0_SECRET_KEY=your_secret
 ```
 
 2. **Install and run:**
@@ -111,11 +111,11 @@ See `SETUP_INSTRUCTIONS.md` or `QUICKSTART.md` for detailed setup.
 This project uses **MongoDB** for data persistence:
 
 ### Collections:
-- **users** - Clerk-synced user data with credit tracking
+- **users** - Auth0-synced user data with credit tracking
 - **verificationresults** - Scan results and verification history
 
 ### Features:
-- ✅ Automatic user sync from Clerk
+- ✅ Automatic user sync from Auth0
 - ✅ Credit system (10 initial credits per user)
 - ✅ Plan management (trial, starter, growth, enterprise)
 - ✅ Full scan history with timestamps
@@ -130,18 +130,18 @@ See `MONGODB_SETUP.md` for complete database guide.
 
 ---
 
-## Authentication (Clerk)
+## Authentication (Auth0)
 
-Gotham-Enterprise uses **Clerk** for:  
-- Sign-in / Sign-up  
-- Session management  
-- User profile access  
-- Route protection  
+Gotham-Enterprise uses **Auth0** for:
+- Sign-in / Sign-up
+- Session management
+- User profile access
+- Route protection
 
 
-### Clerk Integration Overview
+### Auth0 Integration Overview
 
-- `ClerkProvider` is wrapped around the entire application in `layout.tsx`.
+- `Auth0Provider` is wrapped around the entire application in `layout.tsx`.
 - Middleware is configured to protect authenticated routes such as:
   - `/dashboard`
   - `/history`
@@ -149,12 +149,12 @@ Gotham-Enterprise uses **Clerk** for:
 - Components use:
   - `useUser()` to access user data.
   - `useAuth()` to access tokens/session.
-  - Clerk UI components like `<SignIn />`, `<SignUp />`, `<UserButton />`.
+  - Auth0 UI components like `<SignIn />`, `<SignUp />`, `<UserButton />`.
 
-### Required Clerk Environment Variables
+### Required Auth0 Environment Variables
 
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_key
-CLERK_SECRET_KEY=your_key
+NEXT_PUBLIC_AUTH0_PUBLISHABLE_KEY=your_key
+AUTH0_SECRET_KEY=your_key
 
 
 ---
@@ -162,9 +162,9 @@ CLERK_SECRET_KEY=your_key
 ## Getting Started
 
 ### Prerequisites
-- Node.js 16+  
-- npm, yarn, or pnpm  
-- Clerk account (for authentication keys)
+- Node.js 16+
+- npm, yarn, or pnpm
+- Auth0 account (for authentication keys)
 
 ---
 
@@ -173,7 +173,7 @@ CLERK_SECRET_KEY=your_key
 ```bash
 git clone https://github.com/deeptrackgotham/Gotham-Enterprise.git
 cd Gotham-Enterprise
-npm install 
+npm install
 ```
 ---
 
@@ -181,11 +181,11 @@ npm install
 
 Create a `.env.local` file in the root directory and include:
 
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_key
-CLERK_SECRET_KEY=your_key
+NEXT_PUBLIC_AUTH0_PUBLISHABLE_KEY=your_key
+AUTH0_SECRET_KEY=your_key
 
 
-Ensure these match the values generated in your Clerk dashboard and backend API configuration.
+Ensure these match the values generated in your Auth0 dashboard and backend API configuration.
 
 ---
 

@@ -129,7 +129,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Name and email required" }, { status: 400 });
     }
 
-    // Create user (in production, this would integrate with Clerk)
+    // Create user (in production, this would integrate with Auth0)
     const user = await User.create({
       fullName: name,
       email,

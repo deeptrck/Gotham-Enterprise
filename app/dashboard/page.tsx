@@ -146,7 +146,7 @@ export default function Dashboard() {
 
   // Load data once
   useEffect(() => {
-    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isLoaded) return; // Auth0 still hydrating — wait
     if (!isSignedIn) {
       window.location.href = "/login";
       return;

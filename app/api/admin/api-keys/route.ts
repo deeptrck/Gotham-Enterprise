@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
     // Get user details for each key
     const userIds = [...new Set(keys.map((k) => k.userId))];
     const { User } = await import("@/lib/models/User");
-    const users = await User.find({ clerkId: { $in: userIds } }).lean();
-    const userMap = new Map(users.map((u) => [u.clerkId, u]));
+    const users = await User.find({ auth0Sub: { $in: userIds } }).lean();
+    const userMap = new Map(users.map((u) => [u.auth0Sub, u]));
 
     const transformed = keys.map((key) => ({
       id: key._id,

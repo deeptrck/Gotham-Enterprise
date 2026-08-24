@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
     // Get user details
     const userIds = [...new Set(webhooks.map((w) => w.userId))];
     const { User } = await import("@/lib/models/User");
-    const users = await User.find({ clerkId: { $in: userIds } }).lean();
-    const userMap = new Map(users.map((u) => [u.clerkId, u]));
+    const users = await User.find({ auth0Sub: { $in: userIds } }).lean();
+    const userMap = new Map(users.map((u) => [u.auth0Sub, u]));
 
     const transformed = webhooks.map((w) => ({
       id: w._id,

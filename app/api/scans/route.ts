@@ -149,7 +149,7 @@ async function consumeUserCredit(userId: string) {
   await connectToDatabase();
 
   const updatedUser = await User.findOneAndUpdate(
-    { clerkId: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
+    { auth0Sub: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
     { $inc: { credits: -CREDIT_COST_PER_SCAN, creditsUsed: CREDIT_COST_PER_SCAN, scanCount: 1 } },
     { new: true }
   ).select("credits creditsUsed scanCount");
@@ -158,7 +158,7 @@ async function consumeUserCredit(userId: string) {
     return { ok: true as const };
   }
 
-  const existingUser = await User.findOne({ clerkId: userId }).select("_id");
+  const existingUser = await User.findOne({ auth0Sub: userId }).select("_id");
   if (!existingUser) {
     return { ok: false as const, reason: "USER_NOT_FOUND" as const };
   }
@@ -169,7 +169,7 @@ async function consumeUserCredit(userId: string) {
 async function refundUserCredit(userId: string) {
   await connectToDatabase();
   await User.updateOne(
-    { clerkId: userId },
+    { auth0Sub: userId },
     { $inc: { credits: CREDIT_COST_PER_SCAN, creditsUsed: -CREDIT_COST_PER_SCAN, scanCount: -1 } }
   );
 }
