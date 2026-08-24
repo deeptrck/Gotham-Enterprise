@@ -2,7 +2,7 @@ type JobMeta = {
   userId: string;
   fileName: string;
   fileType: "image" | "video" | "audio";
-  source?: "fakecatcher" | "rd-only";
+  source?: "fakecatcher" | "rd-only" | "gotham-model";
   createdAt: string;
   imageData?: string;
 };

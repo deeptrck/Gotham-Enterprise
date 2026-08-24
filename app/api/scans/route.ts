@@ -5,7 +5,7 @@ import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 import verifyMedia from "@/lib/realityDefender";
-import { SageMakerRuntimeClient, InvokeEndpointCommand } from "@aws-sdk/client-sagemaker-runtime";
+import { analyzeWithGothamModel, isGothamModelConfigured } from "@/lib/gothamModel";
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import ffmpegStatic from 'ffmpeg-static';
@@ -36,13 +36,8 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
 );
 
 const CREDIT_COST_PER_SCAN = 1;
-const SAGEMAKER_ENDPOINT_NAME = process.env.SAGEMAKER_ENDPOINT_NAME?.trim() || "";
-const SAGEMAKER_REGION = process.env.SAGEMAKER_REGION || "us-east-1";
 const REALITY_DEFENDER_ENABLED = (process.env.REALITY_DEFENDER_ENABLED ?? "true").toLowerCase() === "true";
 const VIDEO_FRAME_SAMPLE_COUNT = 3;
-
-const sagemakerClient = new SageMakerRuntimeClient({ region: SAGEMAKER_REGION });
-
 
 function hasAcceptedVideoExtension(name: string) {
   const lower = name.toLowerCase();
@@ -123,14 +118,12 @@ async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<B
 }
 
 async function invokeGothamEndpoint(frameBuffer: Buffer): Promise<{ label: string; score: number; confidence: number } | null> {
-  if (!SAGEMAKER_ENDPOINT_NAME) return null;
+  if (!isGothamModelConfigured()) return null;
   try {
-    const command = new InvokeEndpointCommand({ EndpointName: SAGEMAKER_ENDPOINT_NAME, ContentType: "application/x-image", Accept: "application/json", Body: frameBuffer });
-    const response = await sagemakerClient.send(command);
-    const bodyText = Buffer.from(response.Body as Uint8Array).toString("utf-8");
-    return JSON.parse(bodyText) as { label: string; score: number; confidence: number };
+    const result = await analyzeWithGothamModel(frameBuffer, "application/x-image");
+    return { label: result.label, score: result.score, confidence: result.confidence };
   } catch (error) {
-    console.error("SageMaker invocation failed:", error);
+    console.error("Proprietary Gotham model invocation failed:", error);
     return null;
   }
 }
@@ -489,7 +482,7 @@ export async function POST(req: NextRequest) {
 
     // Do not charge a user for an image scan when the temporary provider is disabled
     // and the proprietary provider adapter is not yet configured in this route.
-    if (fileType === "image" && !REALITY_DEFENDER_ENABLED) {
+    if (fileType === "image" && !REALITY_DEFENDER_ENABLED && !isGothamModelConfigured()) {
       return NextResponse.json(
         { error: "Image verification is temporarily unavailable while the Gotham model is being configured." },
         { status: 503 }
@@ -540,26 +533,43 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const rdBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-        const rdResponse = await verifyMedia({ fileBuffer: rdBuffer, fileType: "image" });
-
-        rdOutcome = {
-          requestId: rdResponse.requestId,
-          status: rdResponse.status,
-          score: rdResponse.score,
-          models: rdResponse.models.map((m) => ({
-            name: m.name,
-            status: m.status,
-            score: m.score,
-          })),
-        };
-      } catch (rdError) {
-        console.error("Reality Defender scan failed:", rdError);
+        const mediaBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+        if (isGothamModelConfigured()) {
+          const modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
+          const modelStatus = modelResult.label === "FAKE"
+            ? "MANIPULATED"
+            : modelResult.label === "REAL"
+            ? "AUTHENTIC"
+            : "SUSPICIOUS";
+          rdOutcome = {
+            status: modelStatus,
+            score: modelResult.score,
+            models: [{
+              name: modelResult.model,
+              status: modelStatus,
+              score: modelResult.score,
+            }],
+          };
+        } else {
+          const rdResponse = await verifyMedia({ fileBuffer: mediaBuffer, fileType: "image" });
+          rdOutcome = {
+            requestId: rdResponse.requestId,
+            status: rdResponse.status,
+            score: rdResponse.score,
+            models: rdResponse.models.map((m) => ({
+              name: m.name,
+              status: m.status,
+              score: m.score,
+            })),
+          };
+        }
+      } catch (providerError) {
+        console.error("Image provider failed:", providerError);
         rdOutcome = {
           status: "ERROR",
           score: 0,
           models: [],
-          error: rdError instanceof Error ? rdError.message : String(rdError),
+          error: providerError instanceof Error ? providerError.message : String(providerError),
         };
       }
 
@@ -568,7 +578,7 @@ export async function POST(req: NextRequest) {
         userId,
         fileName,
         fileType,
-        source: "rd-only",
+        source: isGothamModelConfigured() ? "gotham-model" : "rd-only",
         createdAt: new Date().toISOString(),
         imageData,
       });
