@@ -110,6 +110,14 @@ export default function Header() {
             </Link>
             {canAccessAdmin && (
               <Link
+                href="/client-admin"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
+              >
+                Client Admin
+              </Link>
+            )}
+            {canAccessAdmin && (
+              <Link
                 href="/admin/dashboard"
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
               >
@@ -237,6 +245,11 @@ export default function Header() {
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard" className="text-gray-800 dark:text-gray-200">Dashboard</Link>
                   </DropdownMenuItem>
+                  {canAccessAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/client-admin" className="text-gray-800 dark:text-gray-200">Client Admin</Link>
+                    </DropdownMenuItem>
+                  )}
                   {canAccessAdmin && (
                     <DropdownMenuItem asChild>
                       <Link href="/admin/dashboard" className="text-gray-800 dark:text-gray-200">Admin</Link>
