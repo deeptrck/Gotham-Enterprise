@@ -1,43 +1,47 @@
-# Deeptrack Gotham and Data Room
-## AWS Production Handover Report for Vontech
+# Deeptrack Gotham and Sentinel
+## Engineering and Production Handover Report for Vontech
 
 **Prepared for:** Vontech engineering and DevOps team  
 **Prepared by:** Deeptrack engineering  
 **Date:** 26 August 2026  
-**Repositories:** `deeptrck/Gotham-Enterprise`, `deep-track/deeptrack-data-room`
+**Scope:** Gotham Enterprise and Sentinel only
 
-> This document separates the completed application engineering from the remaining AWS infrastructure and production operations. Vontech should use it as the implementation and cutover checklist for Gotham and the Deeptrack investor data room.
+> The Deeptrack data room is explicitly outside this handover and outside the Vontech contract. This report covers only the Gotham and Sentinel platforms, their identity and authorization systems, Gotham’s proprietary AWS model integration, and the production operations required for those two products.
 
 ## 1. Executive summary
 
-The Gotham software has been hardened and merged into the `main` branch. The application now treats the proprietary AWS-hosted Gotham model as the only production verification provider, fails closed when the model endpoint is not configured, refunds credits after failed model invocation, exposes a safe backend readiness endpoint, and includes defensive response normalization for model output.
+Gotham and Sentinel have completed a major application engineering and security-hardening phase. Gotham’s final software changes were reviewed with CodeRabbit, validated, and merged into `main`. Sentinel’s Auth0 migration and Convex customer-authorization gate are deployed to production, with internal administrator access configured for the approved Deeptrack engineering team.
 
-The Gotham frontend now contains an enterprise Deeptrack landing page, a protected client-administration portal, and the existing Deeptrack internal back office. A PostgreSQL schema foundation has been added for the planned MongoDB migration, with Auth0 identities represented by `auth0_sub` in the canonical `users` table.
+Gotham now treats the proprietary AWS-hosted Gotham model as the only production verification provider. It fails closed when the model endpoint is unavailable or not configured, refunds credits after failed inference, normalizes defensive model responses, and exposes a safe backend readiness endpoint. The Gotham frontend includes the Deeptrack enterprise landing page, client administration portal, and Deeptrack internal back office.
 
-The data room software is also AWS-ready. Its application layer includes Auth0 verification, PostgreSQL-backed grants and audit workflows, private S3 upload/download abstractions, NDA acknowledgement enforcement, document lifecycle operations, and frontend API integration. The data room still requires AWS deployment and live acceptance testing.
+Sentinel uses Auth0 for identity and Convex for customer-level authorization. The application requires an explicit active workspace/customer assignment for ordinary users and preserves a fail-closed boundary. Approved internal administrators can access the product-wide administration path without weakening tenant isolation for regular users.
 
-Vontech’s remaining responsibility is to provision and connect AWS infrastructure, complete the model endpoint deployment, configure PostgreSQL/RDS and private S3, deploy API Gateway/Lambda and the frontend, configure secrets and IAM, complete TLS/CloudFront, and run the production acceptance checklist.
+Vontech’s remaining responsibility is infrastructure and operational completion: deploy and secure the proprietary model, provide the SageMaker endpoint contract, complete Gotham’s AWS runtime configuration, support the controlled PostgreSQL migration, and validate production behavior. Sentinel operations require verification of Auth0, Convex, Vercel, monitoring, and deployment settings. No data-room work is included.
 
 ## 2. Repository and merge status
 
-| Repository | Branch / status | Relevant result |
+| Platform | Repository | Current status |
 |---|---|---|
-| `deeptrck/Gotham-Enterprise` | `main` | Pull request #2 was squash-merged |
-| Gotham merge commit | `94a72145cefd8b4b253711f4abbb26ec0fa7d59a` | Enterprise frontend, proprietary model boundary, backend readiness, and CodeRabbit fixes are in `main` |
-| Gotham feature history | `67d1e5f`, `fdc27a5`, `25d1cd8`, `53301bb` | Model enforcement, model hardening, CodeRabbit fixes, admin/schema fixes |
-| `deep-track/deeptrack-data-room` | Software implementation branch history | AWS migration foundation and authenticated data-room workflows are implemented |
+| Gotham | `deeptrck/Gotham-Enterprise` | Final software changes merged into `main` |
+| Sentinel | `deep-track/Sentinel` | Auth0 and Convex authorization changes pushed to `main` and deployed to production |
 
-Gotham’s final CodeRabbit findings were addressed before merge. The final validation passed `npm run build`, `npm run lint`, and `git diff --check`. Lint retains two pre-existing image optimization warnings in the results pages and no new errors from the merged work.
+Gotham pull request #2 was squash-merged into `main` with merge commit:
+
+```text
+94a72145cefd8b4b253711f4abbb26ec0fa7d59a
+```
+
+The final Gotham software validation passed `npm run build`, `npm run lint`, and `git diff --check`. The remaining lint output contains two pre-existing image optimization warnings in the results pages and no new errors from the merged work.
 
 ## 3. Gotham software delivered
 
-### 3.1 Proprietary model integration
+### 3.1 Proprietary AWS model enforcement
 
-Gotham no longer silently routes customer media to Reality Defender or another temporary third-party provider. The scan route checks `isGothamModelConfigured()` before charging credits. If the endpoint is not configured, it returns HTTP `503` and does not charge the user.
+The Gotham scan route no longer silently routes customer media to Reality Defender or another temporary third-party provider. It checks whether the proprietary model is configured before charging credits. If the endpoint is absent, Gotham returns HTTP `503` and does not charge the user.
 
-The adapter invokes SageMaker using the AWS SDK default credential chain. The application sends raw media bytes with the original MIME type and requests a JSON response. Supported product media types are image, video, and audio. Video handling must follow the endpoint’s supported contract; the application can sample video into bounded frames unless Vontech’s endpoint supports native video payloads.
+The SageMaker adapter uses the AWS SDK default credential chain. It sends raw media bytes with the original MIME type and requests a JSON response. The adapter accepts compatible model fields including `label`, `verdict`, `status`, `is_deepfake`, `score`, `confidence`, `model`, `version`, `request_id`, and `metadata`. It also accepts the initial release aliases documented in the model contract.
 
-The adapter accepts `label`, `verdict`, `status`, `is_deepfake`, `score`, `confidence`, `manipulation_score`, `fake_probability`, `confidence_score`, `model`, `version`, `request_id`, and `metadata` aliases. Scores are normalized to `0..1` and clamped. Product verdicts are normalized as follows:
+Scores are normalized to `0..1` and clamped. Product verdicts are mapped as follows:
 
 | Model output | Gotham verdict |
 |---|---|
@@ -45,66 +49,93 @@ The adapter accepts `label`, `verdict`, `status`, `is_deepfake`, `score`, `confi
 | `REAL`, `AUTHENTIC`, `GENUINE` | `AUTHENTIC` |
 | `UNCERTAIN` or unknown | `SUSPICIOUS` |
 
-The model invocation has a bounded timeout controlled by `GOTHAM_MODEL_TIMEOUT_MS`, defaulting to 45 seconds. Empty, malformed, non-JSON, or unexpected response bodies fail safely. If invocation fails after a credit is charged, the credit refund path runs and the user receives a safe model-unavailable response.
+The adapter uses a bounded timeout controlled by `GOTHAM_MODEL_TIMEOUT_MS`, defaulting to 45 seconds. Empty, malformed, non-JSON, and unexpected responses fail safely. When inference fails after a credit is charged, the credit is refunded.
 
-### 3.2 Backend readiness
+### 3.2 Gotham backend readiness
 
-Gotham exposes `GET /api/health`. It reports only safe readiness metadata and does not expose credentials or raw model configuration. It reports whether a database and proprietary model are configured and returns HTTP `503` when either required integration is absent.
+Gotham exposes `GET /api/health`. The endpoint reports only non-sensitive readiness metadata, including whether a database and proprietary model are configured. It returns HTTP `503` when required integrations are absent and does not expose credentials, tokens, raw media, or model secrets.
 
-The health endpoint is an integration readiness signal, not a substitute for a full model inference test. Vontech must validate the endpoint with approved test media after SageMaker is deployed.
+The endpoint is a readiness signal and does not replace live inference testing with approved model test media.
 
-### 3.3 Enterprise frontend
+### 3.3 Gotham enterprise frontend
 
-The public Gotham landing page has been replaced with a Deeptrack enterprise experience. The authenticated application includes:
+The public Gotham landing page has been replaced with a Deeptrack enterprise experience. Authenticated surfaces include:
 
 | Route | Audience | Scope |
 |---|---|---|
-| `/client-admin` | Customer administrators | Workspace health, risk activity, usage, API access, team access, and security posture |
-| `/backoffice` | Deeptrack internal operators | Client accounts, scan logs, credits, billing, model feedback, forensics, API keys, webhooks, audit, and system settings |
+| `/client-admin` | Customer administrators | Workspace health, usage, risk activity, API access, team access, and security posture |
+| `/backoffice` | Deeptrack internal operators | Clients, scan logs, credits, billing, model feedback, forensics, API keys, webhooks, audit, and system settings |
 | `/dashboard`, `/results`, `/history` | Authenticated product users | Media verification and result history |
 
-The client-admin metrics panel now surfaces an error when either dashboard or usage API fails. It no longer replaces failed responses with empty objects that could display misleading zero metrics.
+The client-admin metrics panel now surfaces an error when the dashboard or usage APIs return non-OK responses. It no longer renders misleading zero metrics after an API failure.
 
-## 4. Data-room software delivered
+## 4. Sentinel software and security delivered
 
-The data room is designed as an AWS-native system:
+### 4.1 Auth0 migration
 
-| Component | Intended implementation |
+Sentinel migrated from Clerk to Auth0 SDK v4. The implementation includes Auth0 session management, Google authentication, callback and logout handling, and a token bridge at `/api/auth/token` for the Convex client.
+
+A previous Google login failure was traced to an Auth0 organization requirement. The callback flow was corrected so approved users can authenticate without the earlier organization-parameter failure.
+
+### 4.2 Convex authorization
+
+Sentinel’s production Convex deployment is:
+
+```text
+https://insightful-lark-924.convex.cloud
+```
+
+The production-registered authorization query is:
+
+```text
+watchlists.currentAccess
+```
+
+This query verifies the authenticated identity, active customer/workspace assignment, membership status, and role. Ordinary users cannot access customer data without explicit active authorization. The application intentionally fails closed when authorization cannot be verified.
+
+The earlier `dashboard:currentAccess` function-not-found error was resolved by anchoring the public authorization query in the deployed `watchlists` module. The production Convex deployment was completed without deleting existing indexes or data.
+
+### 4.3 Internal administrator access
+
+Sentinel supports an internal administrator path for approved Deeptrack developers. The approved internal identities are:
+
+| Identity | Purpose |
 |---|---|
-| Frontend | Vite React static artifact behind CloudFront |
-| API | API Gateway HTTP API and Node.js 20 Lambda |
-| Authentication | Auth0 JWT verification with issuer, audience, expiry, subject, and role checks |
-| File storage | Private, encrypted, versioned S3 bucket |
-| Metadata and audit | PostgreSQL/RDS or Aurora PostgreSQL |
-| Secrets | Secrets Manager or protected Lambda configuration |
-| Monitoring | CloudWatch logs, alarms, and retention |
+| `bryan@deeptrack.io` | System developer and internal administrator |
+| `barbarawangui2002@gmail.com` | Frontend engineering and internal administration |
+| `stacymacharia08@gmail.com` | Product engineering and internal administration |
 
-Application workflows implemented include access-status checks, NDA acknowledgement, database-backed grants, invitation state handling, clearance enforcement, document listing, upload intents, secure download URLs, document status/version operations, and audit retrieval. Upload-intent consumption and document creation are designed to commit atomically in PostgreSQL.
+Internal administrators can access product-wide administration without requiring a customer workspace membership. This does not weaken normal tenant isolation or grant the same bypass to ordinary users.
 
-The production frontend uses the remote API adapter when `VITE_DATA_ROOM_API_BASE_URL` is configured. Local browser-only review behavior must not be used as the production security boundary.
+Auth0 role claims remain the preferred primary control. The production Convex internal-admin configuration exists as a deterministic bootstrap/fallback path and must be reviewed periodically.
 
-## 5. Required Vontech AWS configuration
+### 4.4 Redirect and onboarding fixes
 
-### 5.1 SageMaker and model artifact
+The `/new-user` onboarding flow was cleaned of legacy API calls. A Next.js routing defect where `redirect()` was caught as an ordinary exception was fixed; expected redirects no longer render a false “Access service unavailable” state.
 
-Vontech must deploy or confirm the proprietary Gotham model and provide the following values through the approved protected configuration channel:
+A user without an active workspace should see the normal access-pending flow. That is an authorization result, not an infrastructure failure.
+
+## 5. Gotham AWS model contract for Vontech
+
+Vontech must provide the following values through the approved protected configuration channel:
 
 | Requirement | Value to provide |
 |---|---|
 | SageMaker endpoint name | `SAGEMAKER_ENDPOINT_NAME` |
+| Endpoint ARN | Full AWS resource identifier |
 | AWS region | `SAGEMAKER_REGION` or `AWS_REGION` |
 | Model artifact | `GOTHAM_MODEL_S3_URI` |
 | Model name | `GOTHAM_MODEL_NAME` |
 | Model version | `GOTHAM_MODEL_VERSION` |
 | Timeout expectation | `GOTHAM_MODEL_TIMEOUT_MS` |
-| Supported MIME types | Image, video, audio support and restrictions |
-| Request size limits | Maximum body size and per-media limits |
+| Supported MIME types | Image, video, and audio support/restrictions |
+| Request size limits | Maximum body and per-media limits |
 | Response schema | JSON fields and score semantics |
-| Invocation mode | Synchronous real-time endpoint or another supported mode |
-| Execution role | SageMaker and application invocation permissions |
-| Network path | VPC/private endpoint requirements, if applicable |
+| Invocation mode | Synchronous real-time endpoint or approved alternative |
+| Execution role | Application invocation permissions |
+| Network path | VPC/private endpoint requirements |
 
-The application expects a JSON response compatible with:
+The current adapter expects a JSON-compatible response such as:
 
 ```json
 {
@@ -118,43 +149,84 @@ The application expects a JSON response compatible with:
 }
 ```
 
-No AWS access keys should be committed to either repository. Gotham uses the AWS SDK default credential chain and expects IAM roles or protected runtime credentials.
+The model endpoint must not require credentials in the browser. Gotham expects IAM roles or protected runtime credentials through the AWS SDK default credential chain.
 
-### 5.2 Gotham database migration
+## 6. Gotham PostgreSQL migration boundary
 
-Gotham currently uses MongoDB/Mongoose at runtime. The PostgreSQL foundation is present in `db/postgres/001_initial.sql`, but the runtime repository and all production routes have not yet been fully switched to PostgreSQL.
+Gotham currently uses MongoDB/Mongoose at runtime. The initial PostgreSQL foundation is present at:
 
-The recommended migration sequence is:
+```text
+db/postgres/001_initial.sql
+```
+
+The schema covers users, Auth0 identities, organizations, memberships, scans, verification results, API keys, usage, payments, and audit events. It treats `users.id` as the canonical relational identity reference; scan and verification records should not store an independently mutable Auth0 subject.
+
+The runtime application has not yet been fully switched from MongoDB to PostgreSQL. The safe migration sequence is:
 
 1. Provision PostgreSQL/RDS with TLS, backups, private networking, and connection limits.
-2. Review and apply the PostgreSQL schema.
-3. Inventory MongoDB collections, indexes, document counts, and relationships.
-4. Build an idempotent backfill preserving MongoDB source IDs and raw model payloads in `jsonb`.
-5. Migrate legacy `clerkId` identity references to Auth0 `auth0_sub`.
-6. Reconcile users, organizations, scans, verification results, usage, payments, and audit records.
-7. Introduce the PostgreSQL repository behind the existing API contracts.
+2. Review and apply the schema.
+3. Inventory MongoDB collections, indexes, counts, and relationships.
+4. Build an idempotent backfill preserving source IDs and raw model payloads in `jsonb`.
+5. Convert legacy `clerkId` references to Auth0 `auth0_sub` with a temporary mapping strategy.
+6. Reconcile users, organizations, scans, results, usage, payments, and audit records.
+7. Introduce a PostgreSQL repository behind existing API contracts.
 8. Run shadow reads or controlled dual-write validation.
-9. Switch reads by domain area and retain MongoDB read-only for a defined rollback window.
-10. Archive MongoDB only after reconciliation, backup, and rollback verification.
+9. Switch reads by domain area while retaining MongoDB read-only for rollback.
+10. Archive MongoDB only after reconciliation and backup verification.
 
-The PostgreSQL schema intentionally treats `users.id` as the canonical identity reference. Scan and verification-result tables should derive the Auth0 subject through the user relationship rather than storing an independently mutable `auth0_sub` value.
+## 7. Sentinel production operations
 
-### 5.3 Data-room infrastructure
+Vontech should verify or operate the following Sentinel production dependencies according to the agreed ownership model:
 
-Vontech must provision or confirm:
+| Area | Required verification |
+|---|---|
+| Auth0 | Correct tenant, client, callback URLs, logout URLs, allowed origins, Google connection, organization policy, and role claim configuration |
+| Convex | Production deployment `insightful-lark-924`, deployed public functions, environment variables, logs, indexes, and no destructive schema changes |
+| Vercel | Production project linked to the Sentinel repository, latest `main` deployment READY, correct production alias, and required environment variables |
+| Identity | Auth0 subject mapping, internal administrator role/allowlist, customer membership assignment, and access-pending behavior |
+| Monitoring | Auth0 callback errors, Convex function failures, authorization denials, Vercel errors, and abnormal access patterns |
+| Recovery | Known-good Git commits, Convex deployment state, Vercel rollback target, and documented incident ownership |
 
-- A private S3 bucket with Block Public Access, default encryption, versioning, lifecycle cleanup for incomplete uploads, and a secure-transport policy.
-- PostgreSQL reachable by Lambda through private networking or an approved RDS connectivity pattern. The database should not be exposed publicly for convenience.
-- API Gateway routes for `/health`, `/documents`, `/uploads`, `/documents/{id}/download`, access status, NDA acknowledgement, grants, versions, and audit operations.
-- Auth0 issuer, audience, role claim, company/customer claim, callback URL, logout URL, and allowed web origins.
-- CloudFront distribution with the approved alternate domain and ACM certificate.
-- CloudWatch log retention and alarms for Lambda failures, API 5xx responses, latency, model failures, and abnormal denial rates.
+Sentinel acceptance must verify that a normal user without an active workspace cannot access customer data, a valid customer member can access only the assigned workspace, an internal administrator can access approved product-wide administrative views, and backend authorization failures never fail open.
 
-## 6. Environment configuration
+## 8. Production security acceptance checklist
 
-### 6.1 Gotham server configuration
+### Gotham
 
-Use protected runtime configuration rather than committing secrets:
+| Test | Expected result |
+|---|---|
+| Missing SageMaker endpoint | HTTP `503`; no credit charge |
+| Valid authentic media | `AUTHENTIC` result with model name and version |
+| Valid manipulated media | `DEEPFAKE` result with normalized score |
+| Ambiguous media | `SUSPICIOUS` result |
+| Malformed model response | Safe error; provider internals not exposed |
+| SageMaker timeout | Safe error; charged credit refunded |
+| Endpoint unavailable | Safe error; no third-party detector invoked |
+| Oversized/unsupported media | Rejected before inference |
+| Wrong Auth0 issuer/audience | Request rejected |
+| Cross-customer access | Request rejected |
+| Health endpoint | No credentials, tokens, or media disclosed |
+
+### Sentinel
+
+| Test | Expected result |
+|---|---|
+| Google/Auth0 login | Successful callback for approved users |
+| Invalid callback state | Rejected safely |
+| User without membership | Access-pending page, no customer data |
+| Active customer member | Access limited to assigned customer/workspace |
+| Internal administrator | Approved product-wide admin access |
+| Convex outage/error | Fail-closed response, not broad access |
+| Role tampering | Backend rejects unauthorized role claims |
+| Cross-customer request | Backend rejects request |
+| Sign-out | Auth0 session and application session are cleared |
+| Onboarding redirect | Expected Next.js redirect is not rendered as an error |
+
+## 9. Environment and secret handling
+
+No AWS access keys, Auth0 client secrets, database passwords, tokens, or model credentials may be committed to either repository. Use IAM roles, Secrets Manager, protected Vercel variables, protected Convex environment variables, or the approved Vontech secret-management system.
+
+### Gotham variables
 
 ```text
 AUTH0_DOMAIN=<Gotham Auth0 tenant>
@@ -163,8 +235,6 @@ AUTH0_CLIENT_SECRET=<protected secret>
 AUTH0_SECRET=<protected session secret>
 APP_BASE_URL=<production Gotham URL>
 AUTH0_AUDIENCE=https://api.deeptrack.io/gotham
-MONGODB_URI=<temporary MongoDB connection during migration>
-DATABASE_URL=<PostgreSQL connection after migration>
 AWS_REGION=<approved region>
 GOTHAM_MODEL_PROVIDER=proprietary
 SAGEMAKER_ENDPOINT_NAME=<Vontech endpoint>
@@ -172,150 +242,73 @@ SAGEMAKER_REGION=<endpoint region>
 GOTHAM_MODEL_NAME=gotham-core
 GOTHAM_MODEL_VERSION=<approved version>
 GOTHAM_MODEL_TIMEOUT_MS=45000
+DATABASE_URL=<PostgreSQL connection after migration>
+MONGODB_URI=<temporary MongoDB connection during migration only>
 ```
 
-`REALITY_DEFENDER_ENABLED` must remain false for production Gotham. The old third-party variables are retained only as transition-era configuration and must not be used as a fallback.
+`REALITY_DEFENDER_ENABLED` must remain false in production. The third-party provider is not an accepted fallback for Gotham production verification.
 
-### 6.2 Data-room Lambda configuration
+### Sentinel variables and controls
 
-```text
-AUTH0_ISSUER=https://<tenant>.<region>.auth0.com
-AUTH0_AUDIENCE=https://<auth0-api-identifier>
-AUTH0_ROLE_CLAIM=https://deeptrack.io/roles
-AUTH0_COMPANY_ID_CLAIM=https://deeptrack.io/company_id
-DATA_ROOM_ORIGIN=https://<approved-data-room-domain>
-DATA_ROOM_S3_BUCKET=<private-bucket-name>
-DATABASE_URL=<protected PostgreSQL connection string>
-DATABASE_SSL=true
-DATA_ROOM_MAX_FILE_BYTES=26214400
-```
+Sentinel’s Auth0 domain, client identifiers, callback/logout URLs, Convex deployment URL, Convex environment variables, Vercel production variables, and internal administrator configuration must be managed through protected deployment settings. No identity provider secret or Convex deploy credential should appear in Git.
 
-### 6.3 Data-room frontend build configuration
+## 10. Deployment and handoff sequence
 
-After API deployment, build the frontend with:
+Vontech should execute the following sequence for the two contracted platforms:
 
-```text
-VITE_DATA_ROOM_API_BASE_URL=https://<api-id>.execute-api.<aws-region>.amazonaws.com
-```
+1. Confirm AWS account, region, IAM ownership, and protected secret-management workflow for Gotham.
+2. Deploy or confirm the proprietary SageMaker model endpoint.
+3. Validate model invocation with approved non-sensitive media.
+4. Provision PostgreSQL/RDS and apply the reviewed Gotham schema.
+5. Deploy Gotham’s configured runtime and verify `GET /api/health`.
+6. Run Gotham authenticated API and model acceptance tests.
+7. Verify Sentinel’s Auth0 tenant and Google connection settings.
+8. Verify Sentinel’s production Convex deployment and public authorization function.
+9. Verify Vercel’s production deployment and environment variables for Sentinel.
+10. Run Sentinel identity, customer authorization, administrator, and fail-closed tests.
+11. Configure monitoring, alerts, retention, rollback artifacts, and incident ownership for both products.
+12. Record production identifiers, deployed versions, environment owners, and test evidence.
 
-The value must be present at build time. Rebuilding without it can cause the frontend to use the local review adapter rather than the authenticated production API.
+## 11. Ownership boundary
 
-## 7. Deployment sequence
-
-Vontech should execute the following order:
-
-1. Confirm the AWS account, region, naming conventions, IAM ownership, and protected secret workflow.
-2. Deploy the SageMaker model artifact and endpoint.
-3. Confirm SageMaker invocation from the approved application role using non-sensitive test media.
-4. Provision PostgreSQL/RDS and apply the reviewed schema.
-5. Provision the private S3 bucket and validate public access is blocked.
-6. Deploy API Gateway and Lambda using the SAM template and protected database configuration.
-7. Call `/health` and verify database/model readiness.
-8. Run authenticated API acceptance tests with valid and invalid Auth0 tokens.
-9. Build the data-room frontend with the real API Gateway URL.
-10. Upload the static artifact to S3 and attach it to CloudFront.
-11. Confirm the CloudFront alternate domain and ACM certificate.
-12. Invalidate CloudFront cache and verify the custom domain over HTTPS.
-13. Run the complete production acceptance suite.
-14. Record deployment identifiers, rollback artifacts, alarms, owners, and incident contacts.
-
-The data-room repository includes an AWS migration runbook and SAM template. The standard software validation commands are:
-
-```bash
-# Gotham
-npm ci
-npm run build
-npm run lint
-
-# Data room frontend
-npm ci
-npm run build
-
-# Data room backend
-cd backend
-npm ci
-npm run typecheck
-npm run build
-
-# AWS packaging and deployment, owned by Vontech
-sam build --template-file template.yaml
-sam deploy --guided --template-file .aws-sam/build/template.yaml
-```
-
-Do not put database passwords, Auth0 client secrets, AWS access keys, or tokens in committed files or shell history.
-
-## 8. Production acceptance checklist
-
-### Gotham model and API
-
-| Test | Expected result |
-|---|---|
-| Missing SageMaker endpoint | HTTP `503`; no credit charge |
-| Valid authentic media | `AUTHENTIC` result with model name/version |
-| Valid manipulated media | `DEEPFAKE` result with normalized score |
-| Ambiguous media | `SUSPICIOUS` result |
-| Malformed model JSON | Safe error; no raw provider exception exposed |
-| SageMaker timeout | Safe error; charged credit refunded |
-| Model endpoint unavailable | Safe error; no third-party detector invoked |
-| Oversized or unsupported media | Rejected before model invocation |
-| Health endpoint without model configuration | HTTP `503`, no secrets exposed |
-| Wrong Auth0 issuer/audience | Request rejected |
-| Cross-customer access attempt | Request rejected |
-
-### Data room
-
-| Test | Pass condition |
-|---|---|
-| Auth0 issuer and audience | Valid JWT accepted; wrong issuer/audience rejected |
-| Role enforcement | Founder and Investor Relations can administer; Investor is read-only |
-| Clearance enforcement | Investor cannot list or download documents above assigned tier |
-| NDA enforcement | Investor without current NDA acknowledgement receives no document URL |
-| Invitation expiry | Expired or revoked grants cannot access the room |
-| Private storage | Direct unauthorized S3 access fails |
-| Upload intent | Short-lived, owner-bound, size/content checked, single-use |
-| Download URL | Short-lived, object-scoped, issued only after authorization |
-| Audit trail | Login, denial, NDA, view, upload, publication, download, and access changes are recorded |
-| Tenant isolation | Browser parameter changes cannot reveal another firm’s documents |
-| Version history | New uploads preserve prior versions |
-| Logging | No secrets, tokens, identity documents, or raw provider exceptions logged |
-| Recovery | Previous frontend/API artifacts and database backups are available |
-
-## 9. Ownership boundary
-
-| Workstream | Deeptrack engineering | Vontech |
+| Workstream | Deeptrack engineering | Vontech / DevOps |
 |---|---|---|
-| Gotham frontend and API code | Completed and merged | Deploy and operate |
-| SageMaker adapter and response normalization | Completed | Provide endpoint and model contract |
-| SageMaker model artifact and endpoint | Define contract and test | Provision, secure, monitor, and scale |
-| MongoDB-to-PostgreSQL application migration | Implement repository and migration code | Provision database and operational controls |
-| PostgreSQL runtime | Application schema/future repository | RDS, VPC, TLS, backups, credentials, capacity |
-| Data-room API code | Implemented | Deploy Lambda/API Gateway and configure runtime |
-| Data-room S3 adapter | Implemented | Provision bucket, IAM, encryption, policy, lifecycle |
-| CloudFront/ACM/DNS | Specify required configuration | Configure distribution, certificate, aliases, cache, and DNS |
-| Auth0 application logic | Implemented | Confirm tenant settings, URLs, claims, and secrets |
-| Monitoring and incident response | Define events and health signals | Configure CloudWatch, alarms, on-call, and recovery |
-| Production acceptance | Support test design and remediation | Execute AWS-side tests and provide evidence |
+| Gotham application code | Implemented, reviewed, and merged | Deploy and operate |
+| Gotham SageMaker adapter | Implemented with defensive parsing and timeout | Provide endpoint, IAM, networking, scaling, and monitoring |
+| Proprietary model artifact | Define request/response contract | Host artifact and deploy endpoint |
+| Gotham PostgreSQL schema | Initial foundation implemented | Provision database, networking, TLS, backups, and secrets |
+| MongoDB migration code | Implement next controlled migration phase | Provide production DB operations and rollback support |
+| Gotham Auth0 integration | Application flow implemented | Confirm tenant/application configuration and secrets |
+| Sentinel Auth0 flow | Migrated and hardened | Verify tenant policy, Google connection, callbacks, claims, and monitoring |
+| Sentinel Convex authorization | Customer gate and admin path implemented | Operate deployment, environment, logs, and rollback |
+| Sentinel Vercel deployment | Code and production fixes delivered | Operate project, variables, deployments, and rollback |
+| Security acceptance | Define test cases and remediate software defects | Execute production evidence and operational controls |
+| Observability and incident response | Define signals and safe error behavior | Configure alerts, on-call, retention, and recovery |
 
-## 10. Immediate handover actions for Vontech
+## 12. Immediate information required from Vontech
 
-Vontech should begin with the following information exchange:
+Please return the following before production model validation and infrastructure cutover:
 
-1. AWS account and region where Gotham and the data room will run.
-2. SageMaker endpoint name, ARN, region, model version, and response contract.
-3. Model artifact S3 URI and the intended SageMaker execution role.
-4. PostgreSQL/RDS endpoint strategy, database name, TLS policy, and secret-management method.
-5. S3 bucket names, CloudFront distribution ID, and ACM certificate ARN.
-6. API Gateway URL after SAM deployment.
-7. Auth0 production tenant/application values and confirmed role/company claims.
-8. CloudWatch log groups, alarms, retention, and incident owner.
-9. Results of the production acceptance checklist.
+1. Gotham SageMaker endpoint name and ARN.
+2. AWS region and model artifact S3 URI.
+3. Supported request MIME types, size limits, timeout, and response schema.
+4. IAM execution/invocation role and network requirements.
+5. PostgreSQL/RDS endpoint strategy, TLS policy, and secret-management method.
+6. Gotham production runtime URL and deployment target.
+7. Sentinel Auth0 tenant/application confirmation, callback/logout URLs, and role-claim configuration.
+8. Sentinel Convex production deployment confirmation and environment ownership.
+9. Sentinel Vercel project/deployment ownership and rollback procedure.
+10. CloudWatch or equivalent monitoring plan for Gotham and Sentinel.
+11. Results of the production acceptance checklists in this document.
 
-Once the above values are supplied, Deeptrack engineering can complete the live SageMaker validation, finalize the PostgreSQL runtime migration, and assist with any deployment defects without changing the application architecture again.
+## 13. Explicit scope exclusion
+
+The Deeptrack data room is **not part of the Vontech contract** and is intentionally excluded from this report. Its repositories, AWS deployment, S3 storage, CloudFront, ACM, API Gateway, and PostgreSQL work must be handled under a separate ownership agreement and handover document.
 
 ## References
 
-1. `docs/GOTHAM_AWS_MODEL_CONTRACT.md` — Gotham proprietary AWS model request, response, timeout, failure, and acceptance contract.
-2. `docs/AWS_MIGRATION_RUNBOOK.md` in `deeptrack-data-room` — data-room AWS architecture, environment configuration, deployment sequence, and production acceptance checklist.
-3. `db/postgres/001_initial.sql` in `Gotham-Enterprise` — initial Gotham PostgreSQL schema foundation.
-4. `app/api/scans/route.ts` and `lib/gothamModel.ts` in `Gotham-Enterprise` — proprietary model enforcement and defensive inference adapter.
-5. Pull request #2, `deeptrck/Gotham-Enterprise` — final CodeRabbit-reviewed and merged software changes: https://github.com/deeptrck/Gotham-Enterprise/pull/2
+1. `docs/GOTHAM_AWS_MODEL_CONTRACT.md` in `deeptrck/Gotham-Enterprise` — Gotham proprietary AWS model request, response, timeout, failure, and acceptance contract.
+2. `db/postgres/001_initial.sql` in `deeptrck/Gotham-Enterprise` — initial Gotham PostgreSQL schema foundation.
+3. `app/api/scans/route.ts` and `lib/gothamModel.ts` in `deeptrck/Gotham-Enterprise` — proprietary model enforcement and defensive inference adapter.
+4. `backend/convex/watchlists.ts` and `backend/convex/lib/rbac.ts` in `deep-track/Sentinel` — production Convex authorization query and RBAC implementation.
+5. Pull request #2 in `deeptrck/Gotham-Enterprise` — final reviewed and merged Gotham software changes: https://github.com/deeptrck/Gotham-Enterprise/pull/2
