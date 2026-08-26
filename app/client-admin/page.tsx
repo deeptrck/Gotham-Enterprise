@@ -11,7 +11,7 @@ function claimValues(value: unknown) {
 
 export default async function ClientAdminPage() {
   const session = await auth0.getSession();
-  if (!session?.user) redirect("/api/auth/login?returnTo=/client-admin");
+  if (!session?.user) redirect("/auth/login?returnTo=/client-admin");
 
   const user = session.user as typeof session.user & Record<string, unknown>;
   const roles = claimValues(user[ROLE_CLAIM]).map((role) => role.toLowerCase());
