@@ -24,8 +24,11 @@ export default function ClientAdminClient({ user }: Props) {
     let active = true;
     Promise.all([fetch("/api/users/dashboard", { credentials: "include", cache: "no-store" }), fetch("/api/usage", { credentials: "include", cache: "no-store" })])
       .then(async ([dashboard, usage]) => {
-        const dashboardJson = dashboard.ok ? await dashboard.json() : {};
-        const usageJson = usage.ok ? await usage.json() : {};
+        if (!dashboard.ok || !usage.ok) {
+          throw new Error("Client metrics request failed");
+        }
+        const dashboardJson = await dashboard.json();
+        const usageJson = await usage.json();
         if (active) setData({ ...dashboardJson, ...usageJson });
       })
       .catch(() => { if (active) setError("Live client metrics are temporarily unavailable."); })

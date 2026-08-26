@@ -153,10 +153,11 @@ export default function Header() {
           Pricing &amp; Billing
         </Link>
 
-        {!isLoading ? (
+        {isLoading ? (
           <Button
             variant="ghost"
-            className="text-sm text-gray-700 dark:text-gray-300 hover:text-blue-500"
+            disabled
+            className="text-sm text-gray-400 dark:text-gray-500"
           >
             Account
           </Button>
@@ -225,9 +226,9 @@ export default function Header() {
       {/* Mobile menu (hamburger) */}
       <div className="flex md:hidden items-center gap-2">
         {/* <ThemeToggle /> */}
-        {!isLoading ? (
-          <Button variant="ghost" size="icon" aria-label="Open menu">
-            <Menu className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+        {isLoading ? (
+          <Button variant="ghost" size="icon" disabled aria-label="Loading menu">
+            <Menu className="h-6 w-6 text-gray-400 dark:text-gray-500" />
           </Button>
         ) : (
           <DropdownMenu>
