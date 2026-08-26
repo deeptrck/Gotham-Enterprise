@@ -15,6 +15,7 @@ const endpointName = process.env.SAGEMAKER_ENDPOINT_NAME?.trim() || "";
 const region = process.env.SAGEMAKER_REGION || process.env.AWS_REGION || "us-east-1";
 const modelName = process.env.GOTHAM_MODEL_NAME || "gotham-core";
 const modelVersion = process.env.GOTHAM_MODEL_VERSION;
+const modelTimeoutMs = Math.max(5000, Number.parseInt(process.env.GOTHAM_MODEL_TIMEOUT_MS || "45000", 10));
 const client = new SageMakerRuntimeClient({ region });
 
 function normalizeNumber(value: unknown): number {
@@ -50,10 +51,19 @@ export async function analyzeWithGothamModel(
     ContentType: contentType,
     Accept: "application/json",
     Body: mediaBuffer,
-  }));
+  }), { abortSignal: AbortSignal.timeout(modelTimeoutMs) });
 
+  if (!response.Body) throw new Error("SageMaker returned an empty response body");
   const body = Buffer.from(response.Body as Uint8Array).toString("utf8");
-  const raw = JSON.parse(body) as Record<string, unknown>;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new Error("SageMaker returned a non-JSON response");
+  }
+  const raw = (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+    ? parsed as Record<string, unknown>
+    : { prediction: parsed };
   const explicitDeepfake = typeof raw.is_deepfake === "boolean" ? raw.is_deepfake : undefined;
   const score = normalizeNumber(raw.manipulation_score ?? raw.fake_probability ?? raw.score ?? raw.confidence_score);
   const label = normalizeLabel(raw, score);
