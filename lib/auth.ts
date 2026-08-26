@@ -1,4 +1,6 @@
 ﻿import { auth0 } from "@/lib/auth0";
+export { AUTH0_ROLE_CLAIM, getAuth0Roles, hasAnyRole, isGothamAdministrator, getOrganizationId, canAccessOrganization } from "@/lib/authClaims";
+export type { GothamRole } from "@/lib/authClaims";
 
 export async function auth() {
   const session = await auth0.getSession();

@@ -4,10 +4,6 @@ export function getAdminEmailAllowlist(): string[] {
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
 
-  if (configured.length === 0 && process.env.NODE_ENV !== "production") {
-    return ["*"];
-  }
-
   return configured;
 }
 

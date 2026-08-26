@@ -7,6 +7,11 @@
     "start": "next start",
     "lint": "eslint",
     "build": "next build",
+    "test:model-hardening": "node scripts/test-model-hardening.js",
+    "test:auth-rbac": "ts-node --compiler-options '{\"module\":\"commonjs\"}' tests/auth-rbac.integration.ts",
+    "test:migration": "node --test tests/migration.integration.js",
+    "test:postgres": "node --test tests/postgres-tenant.integration.js",
+    "test:integration": "npm run test:auth-rbac && npm run test:migration && npm run test:postgres",
     "security:secrets": "gitleaks detect --source . --config .gitleaks.toml --redact --verbose",
     "security:deps": "npm audit --omit=dev --audit-level=high",
     "security": "npm run security:deps && npm run security:secrets"
@@ -20,7 +25,6 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@realitydefender/realitydefender": "^0.1.16",
     "@sentry/nextjs": "^10.34.0",
     "bullmq": "^5.64.0",
     "class-variance-authority": "^0.7.1",
@@ -28,14 +32,14 @@
     "dotenv": "^17.2.3",
     "ffmpeg-static": "^5.3.0",
     "ioredis": "^5.8.2",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.544.0",
     "mongoose": "^8.0.0",
-    "pg": "^8.16.3",
-    "next": "^15.3.8",
+    "next": "^16.3.3",
     "next-themes": "^0.4.6",
     "node-fetch": "^3.3.2",
+    "pg": "^8.16.3",
     "react": "19.1.4",
     "react-dom": "19.1.4",
     "recharts": "^3.2.1",
@@ -54,5 +58,8 @@
     "ts-node": "^10.9.2",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "brace-expansion": "^2.0.1"
   }
 }

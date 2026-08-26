@@ -1,8 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
-import { User } from "@/lib/models/User";
-import { VerificationResult } from "@/lib/models/VerificationResult";
+import { auth, getOrganizationId } from "@/lib/auth";
+import { findUserForOrganization } from "@/lib/repositories/users";
+import { listVerificationResults } from "@/lib/repositories/verificationResults";
 import * as Sentry from "@sentry/nextjs";
 
 // Type for a single scan summary returned to the frontend
@@ -17,88 +16,52 @@ type ScanSummary = {
   imageUrl?: string;
 };
 
-// Dashboard API response type
-type DashboardResponse = {
-  credits: number;
-  scans: ScanSummary[];
-  page: number;
-  limit: number;
-};
-
-// Type for the User document we need
-type UserDoc = {
-  credits?: number;
-};
+function serializeResult(result: Awaited<ReturnType<typeof listVerificationResults>>["rows"][number]): ScanSummary {
+  return {
+    _id: result.id,
+    scanId: result.scan_id,
+    fileName: result.file_name,
+    status: result.status,
+    confidenceScore: result.confidence_score,
+    createdAt: result.created_at,
+    fileType: result.file_type,
+    imageUrl: result.image_url ?? undefined,
+  };
+}
 
 export async function GET(req: NextRequest) {
   const reqId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   console.time(`dashboard:${reqId}:total`);
 
   try {
-    console.time(`dashboard:${reqId}:auth`);
-    const { userId } = await auth();
-    console.timeEnd(`dashboard:${reqId}:auth`);
+    const { userId, user } = await auth();
 
     if (!userId) {
       console.timeEnd(`dashboard:${reqId}:total`);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const organizationId = getOrganizationId(user);
+    if (!organizationId) return NextResponse.json({ error: "Organization context required" }, { status: 403 });
     const url = new URL(req.url);
-    const pageParam = url.searchParams.get("page");
-    const limitParam = url.searchParams.get("limit");
-
-    const page = Math.max(
-      1,
-      pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1
-    );
-    const limit = Math.max(
-      1,
-      Math.min(100, limitParam ? parseInt(limitParam, 10) : 20)
-    );
-
-    console.time(`dashboard:${reqId}:connect`);
-    await connectToDatabase();
-    console.timeEnd(`dashboard:${reqId}:connect`);
-
-    const skip = (page - 1) * limit;
-
-    // Fetch user and scans in parallel with optimized queries
-    const [userResult, scansResult] = await Promise.allSettled([
-      User.findOne({ auth0Sub: userId })
-        .select("credits")
-        .maxTimeMS(2000)
-        .lean({ virtuals: false, getters: false })
-        .exec() as unknown as Promise<UserDoc | null>,
-      VerificationResult.find({ userId })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select("_id scanId fileName status confidenceScore createdAt fileType imageUrl")
-        .hint({ userId: 1, createdAt: -1 })
-        .maxTimeMS(5000)
-        .lean({ virtuals: false, getters: false })
-        .exec() as unknown as Promise<ScanSummary[]>,
+    const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+    const limit = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get("limit") ?? "20", 10) || 20));
+    const [account, results] = await Promise.all([
+      findUserForOrganization({ organizationId, actorUserId: userId }, userId),
+      listVerificationResults({ scope: { organizationId, actorUserId: userId }, userId, limit, offset: (page - 1) * limit }),
     ]);
-
-    const user: UserDoc | null = userResult.status === "fulfilled" ? (userResult.value as UserDoc | null) : null;
-    const scans: ScanSummary[] = scansResult.status === "fulfilled" ? (scansResult.value as ScanSummary[]) : [];
-
-    const responseData: DashboardResponse = {
-      credits: user?.credits ?? 0,
-      scans,
+    if (!account) return NextResponse.json({ error: "User is not assigned to this organization" }, { status: 403 });
+    const responseData = {
+      credits: account.credits,
+      scans: results.rows.map(serializeResult),
       page,
       limit,
     };
 
-    console.timeEnd(`dashboard:${reqId}:total`);
     return NextResponse.json(responseData, { status: 200 });
   } catch (error) {
     console.error(`Error fetching dashboard data [${reqId}]:`, error);
     Sentry.captureException(error);
-    try {
-      console.timeEnd(`dashboard:${reqId}:total`);
-    } catch {}
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error", requestId: reqId }, { status: 500 });
   }
 }

@@ -355,7 +355,7 @@ export default function AdminDashboardClient() {
 
     const modelRows = [
       {
-        name: "fakecatcher-rppg",
+        name: "gotham-core-sagemaker",
         media: "video",
         accuracy: (100 - falsePositiveRate).toFixed(1),
         drift: last7.length < 10 ? "Medium" : "Low",
@@ -621,7 +621,7 @@ export default function AdminDashboardClient() {
               <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-lg border p-3 text-sm">Detection decision history: {data.total} records</div>
                 <div className="rounded-lg border p-3 text-sm">Evidence retention: backend TTL + app cache</div>
-                <div className="rounded-lg border p-3 text-sm">Model indicator: fakecatcher-rppg</div>
+                <div className="rounded-lg border p-3 text-sm">Model indicator: gotham-core-sagemaker</div>
               </CardContent>
             </Card>
           </TabsContent>

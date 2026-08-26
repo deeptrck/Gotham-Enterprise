@@ -1,9 +1,9 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, setJobRdAnalysis } from "@/lib/fakecatcherStore";
-import { connectToDatabase } from "@/lib/db";
-import { User } from "@/lib/models/User";
-import { VerificationResult } from "@/lib/models/VerificationResult";
+import { auth, getOrganizationId } from "@/lib/auth";
+import { createHash } from "crypto";
+import { beginModelInvocation, completeModelInvocation } from "@/lib/repositories/operationalRepositories";
+import { consumeCreditForScan, refundCreditForScan } from "@/lib/repositories/users";
+import { listVerificationResults, insertVerificationResult } from "@/lib/repositories/verificationResults";
 import { analyzeWithGothamModel, isGothamModelConfigured } from "@/lib/gothamModel";
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -15,24 +15,11 @@ import { tmpdir } from "os";
 import path from "path";
 
 
-const BACKEND_API_URL = (
-  process.env.BACKEND_API_URL?.trim() ||
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
-  ""
-).replace(/\/$/, "");
-
-function buildBackendUrl(path: string) {
-  return `${BACKEND_API_URL}${path}`;
-}
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const ACCEPTED_VIDEO_EXT = [".mp4", ".avi", ".mov", ".mkv"];
 const ACCEPTED_IMAGE_EXT = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
 const ACCEPTED_AUDIO_EXT = [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"];
-const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
-  5000,
-  parseInt(process.env.BACKEND_REQUEST_TIMEOUT_MS || "90000", 10)
-);
 
 const CREDIT_COST_PER_SCAN = 1;
 const VIDEO_FRAME_SAMPLE_COUNT = 3;
@@ -62,21 +49,8 @@ function inferFileType(fileName: string, mimeType?: string): "image" | "video" |
   return null;
 }
 
-function mapRdModelStatus(status?: string) {
-  if (status === "MANIPULATED") return "MANIPULATED";
-  if (status === "AUTHENTIC") return "AUTHENTIC";
-  return "SUSPICIOUS";
-}
-
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
-}
-
-function mapRdToManipulationScore(status?: string, score?: number) {
-  const normalized = clamp01(typeof score === "number" ? score : 0);
-  if (status === "AUTHENTIC") return 1 - normalized;
-  if (status === "MANIPULATED") return normalized;
-  return 0.5;
 }
 
 function mapCombinedStatus(score: number) {
@@ -85,14 +59,6 @@ function mapCombinedStatus(score: number) {
   return "SUSPICIOUS";
 }
 
-function parseBackendError(raw: string) {
-  try {
-    const parsed = JSON.parse(raw) as { error?: string; detail?: string; message?: string };
-    return parsed.error || parsed.detail || parsed.message || raw;
-  } catch {
-    return raw || "Backend error";
-  }
-}
 
 async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<Buffer[]> {
   const workDir = await mkdtemp(path.join(tmpdir(), "gotham-video-"));
@@ -115,18 +81,31 @@ async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<B
   }
 }
 
-async function invokeGothamEndpoint(frameBuffer: Buffer): Promise<{ label: string; score: number; confidence: number } | null> {
+async function invokeGothamEndpoint(frameBuffer: Buffer, scope: { organizationId: string; actorUserId?: string }, userId: string, idempotencyKey: string, frameIndex: number): Promise<{ label: string; score: number; confidence: number } | null> {
   if (!isGothamModelConfigured()) return null;
+  const started = await beginModelInvocation({
+    scope,
+    idempotencyKey: `${idempotencyKey}:frame:${frameIndex}`,
+    endpointName: process.env.SAGEMAKER_ENDPOINT_NAME!,
+    userId,
+    requestContentType: "application/x-image",
+    requestMetadata: { frameIndex },
+  });
+  if (started.reused && started.invocation.status === "succeeded" && started.invocation.response_metadata?.result) return started.invocation.response_metadata.result as { label: string; score: number; confidence: number };
+  if (started.reused) throw new Error("A video frame invocation with this idempotency key is already processing");
+  const startedAt = Date.now();
   try {
     const result = await analyzeWithGothamModel(frameBuffer, "application/x-image");
-    return { label: result.label, score: result.score, confidence: result.confidence };
+    const normalized = { label: result.label, score: result.score, confidence: result.confidence };
+    await completeModelInvocation({ scope, id: started.invocation.id, status: "succeeded", latencyMs: Date.now() - startedAt, responseMetadata: { result: normalized } });
+    return normalized;
   } catch (error) {
-    console.error("Proprietary Gotham model invocation failed:", error);
-    return null;
+    await completeModelInvocation({ scope, id: started.invocation.id, status: "failed", latencyMs: Date.now() - startedAt, errorCode: "SAGEMAKER_INVOCATION_FAILED" });
+    throw error;
   }
 }
 
-async function analyzeVideoWithGotham(videoBuffer: Buffer): Promise<{ status: string; confidenceScore: number; frameResults: Array<{ label: string; score: number; confidence: number }>; error?: string }> {
+async function analyzeVideoWithGotham(videoBuffer: Buffer, scope: { organizationId: string; actorUserId?: string }, userId: string, idempotencyKey: string): Promise<{ status: string; confidenceScore: number; frameResults: Array<{ label: string; score: number; confidence: number }>; error?: string }> {
   let frames: Buffer[];
   try {
     frames = await extractVideoFrames(videoBuffer, VIDEO_FRAME_SAMPLE_COUNT);
@@ -134,7 +113,7 @@ async function analyzeVideoWithGotham(videoBuffer: Buffer): Promise<{ status: st
     console.error("Frame extraction failed:", error);
     return { status: "ERROR", confidenceScore: 0, frameResults: [], error: "Failed to extract frames from video" };
   }
-  const results = await Promise.all(frames.map((f) => invokeGothamEndpoint(f)));
+  const results = await Promise.all(frames.map((f, index) => invokeGothamEndpoint(f, scope, userId, idempotencyKey, index)));
   const validResults = results.filter((r): r is { label: string; score: number; confidence: number } => r !== null);
   if (validResults.length === 0) return { status: "ERROR", confidenceScore: 0, frameResults: [], error: "Model endpoint unavailable" };
   const avgScore = validResults.reduce((sum, r) => sum + r.score, 0) / validResults.length;
@@ -143,260 +122,42 @@ async function analyzeVideoWithGotham(videoBuffer: Buffer): Promise<{ status: st
   return { status, confidenceScore, frameResults: validResults };
 }
 
-async function consumeUserCredit(userId: string) {
-  await connectToDatabase();
-
-  const updatedUser = await User.findOneAndUpdate(
-    { auth0Sub: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
-    { $inc: { credits: -CREDIT_COST_PER_SCAN, creditsUsed: CREDIT_COST_PER_SCAN, scanCount: 1 } },
-    { new: true }
-  ).select("credits creditsUsed scanCount");
-
-  if (updatedUser) {
-    return { ok: true as const };
-  }
-
-  const existingUser = await User.findOne({ auth0Sub: userId }).select("_id");
-  if (!existingUser) {
-    return { ok: false as const, reason: "USER_NOT_FOUND" as const };
-  }
-
+async function consumeUserCredit(scope: { organizationId: string; actorUserId?: string }, userId: string, idempotencyKey?: string) {
+  const user = await consumeCreditForScan(scope, userId, CREDIT_COST_PER_SCAN, idempotencyKey);
+  if (user) return { ok: true as const, user };
   return { ok: false as const, reason: "INSUFFICIENT_CREDITS" as const };
 }
 
-async function refundUserCredit(userId: string) {
-  await connectToDatabase();
-  await User.updateOne(
-    { auth0Sub: userId },
-    { $inc: { credits: CREDIT_COST_PER_SCAN, creditsUsed: -CREDIT_COST_PER_SCAN, scanCount: -1 } }
-  );
+async function refundUserCredit(scope: { organizationId: string; actorUserId?: string }, userId: string, idempotencyKey?: string) {
+  await refundCreditForScan(scope, userId, CREDIT_COST_PER_SCAN, idempotencyKey);
 }
 
-async function postVideoWithRetry(payload: FormData, attempts = 2) {
-  if (!BACKEND_API_URL) {
-    return {
-      ok: false as const,
-      status: 503,
-      body: "Legacy video backend is not configured.",
-      contentType: "application/json",
-    };
-  }
 
-  let lastStatus = 503;
-  let lastBody = "";
-  let lastContentType = "application/json";
-
-  for (let i = 0; i < attempts; i++) {
-    let response: Response;
-
-    try {
-      response = await fetch(buildBackendUrl("/v1/video/predict/video"), {
-        method: "POST",
-        body: payload,
-        cache: "no-store",
-        signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
-      });
-    } catch (error) {
-      const err = error as { message?: string; cause?: { code?: string } };
-      const causeCode = err.cause?.code;
-      const timeoutLike =
-        causeCode === "UND_ERR_HEADERS_TIMEOUT" ||
-        causeCode === "UND_ERR_CONNECT_TIMEOUT" ||
-        causeCode === "ABORT_ERR";
-
-      lastStatus = timeoutLike ? 504 : 502;
-      lastBody = timeoutLike
-        ? `Backend request timed out after ${Math.round(BACKEND_REQUEST_TIMEOUT_MS / 1000)}s while calling ${buildBackendUrl("/v1/video/predict/video")}.`
-        : `Failed to reach backend ${buildBackendUrl("/v1/video/predict/video")}: ${err.message || "network error"}`;
-      lastContentType = "application/json";
-
-      if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1200 * (i + 1)));
-        continue;
-      }
-
-      break;
-    }
-
-    const responseBody = await response.text();
-    const contentType = response.headers.get("content-type") || "application/json";
-
-    if (response.ok) {
-      return { ok: true as const, status: response.status, body: responseBody, contentType };
-    }
-
-    lastStatus = response.status;
-    lastBody = responseBody;
-    lastContentType = contentType;
-
-    const isTransient = response.status === 503 || response.status === 429;
-    if (!isTransient || i === attempts - 1) {
-      break;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1200 * (i + 1)));
-  }
-
-  return { ok: false as const, status: lastStatus, body: lastBody, contentType: lastContentType };
-}
-
-function getForwardHeaders(req: NextRequest) {
-  const contentType = req.headers.get("content-type");
-  const authorization = req.headers.get("authorization");
-
-  return {
-    ...(contentType ? { "Content-Type": contentType } : {}),
-    ...(authorization ? { Authorization: authorization } : {}),
-  };
-}
-
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    let jobsPayload: { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> } = { jobs: {} };
-    const degraded: string | null = null;
-
-    if (BACKEND_API_URL) {
-      try {
-        const response = await fetch(buildBackendUrl("/jobs"), {
-        method: "GET",
-        headers: getForwardHeaders(req),
-        cache: "no-store",
-        signal: AbortSignal.timeout(5000), // Short timeout for fast loading
-      });
-
-      if (!response.ok) {
-        // Backend unavailable, but we have cached RD-only scans - no need for error message
-      } else {
-        jobsPayload = await response.json() as { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> };
-      }
-          } catch (error) {
-        // Backend unavailable, but we have cached RD-only scans - continue without error message
-      }
-    }
-    const jobs = jobsPayload.jobs || {};
-
-    const maxScanEntries = 200;
-
-    const backendScans = Object.entries(jobs)
-      .sort(([, a], [, b]) => (a.age_sec ?? Number.MAX_SAFE_INTEGER) - (b.age_sec ?? Number.MAX_SAFE_INTEGER))
-      .slice(0, maxScanEntries)
-      .map(([jobId, job]) => {
-        const meta = getJobMeta(jobId);
-        const mappedStatus = job.status === "done"
-          ? "AUTHENTIC"
-          : job.status === "error"
-          ? "DEEPFAKE"
-          : "PROCESSING";
-
-        return {
-          _id: jobId,
-          scanId: jobId,
-          fileName: meta?.fileName || job.filename || `video-${jobId}`,
-          fileType: "video",
-          status: mappedStatus,
-          confidenceScore: 0,
-          createdAt: meta?.createdAt || new Date(Date.now() - ((job.age_sec || 0) * 1000)).toISOString(),
-          imageUrl: meta?.imageData || "",
-        };
-      }).filter((item) => {
-        const meta = getJobMeta(item.scanId);
-        return !meta || meta.userId === userId;
-      });
-
-    const rdOnlyScans = listUserJobMeta(userId)
-      .filter((meta) => meta.source === "fakecatcher" || meta.source === "gotham-model" || meta.source === "rd-only")
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, maxScanEntries)
-      .map((meta) => {
-        const fc = getJobFakeCatcherAnalysis(meta.jobId);
-        let status = "SUSPICIOUS";
-        let confidenceScore = 50;
-        if (fc?.label) {
-          status = fc.label === "FAKE" ? "DEEPFAKE" : fc.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS";
-          confidenceScore = fc.confidence ? Math.round(fc.confidence * 10) / 10 : 50;
-        }
-
-        return {
-          _id: meta.jobId,
-          scanId: meta.jobId,
-          fileName: meta.fileName,
-          fileType: meta.fileType,
-          status,
-          confidenceScore,
-          createdAt: meta.createdAt,
-          imageUrl: meta.imageData || "",
-        };
-      });
-
-    // Also include persisted verification results from DB so history survives server restarts.
-    // Limit DB fetch to latest N entries to avoid long queries.
-    let scans = [];
-    try {
-      await connectToDatabase();
-      const fetchLimit = 200;
-      const dbTop = await VerificationResult.find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(fetchLimit)
-        .hint({ userId: 1, createdAt: -1 })
-        .maxTimeMS(3000)
-        .lean();
-
-      const dbScans = (dbTop || []).map((d: any) => ({
-        _id: d._id,
-        scanId: d.scanId || d._id,
-        fileName: d.fileName,
-        fileType: d.fileType,
-        status: d.status,
-        confidenceScore: d.confidenceScore,
-        createdAt: d.createdAt || d.createdAt,
-        imageUrl: d.imageUrl || "",
-      }));
-
-      // Merge backendScans, rdOnlyScans and dbScans, dedupe by scanId (prefer DB entries)
-      const byScan = new Map<string, any>();
-      for (const s of dbScans) byScan.set(String(s.scanId), s);
-      for (const s of backendScans) if (!byScan.has(String(s.scanId))) byScan.set(String(s.scanId), s);
-      for (const s of rdOnlyScans) if (!byScan.has(String(s.scanId))) byScan.set(String(s.scanId), s);
-
-      scans = Array.from(byScan.values())
-        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
-        .slice(0, maxScanEntries);
-    } catch (dbErr) {
-      // If DB is unavailable, fall back to in-memory cached entries (fast path)
-      scans = [...backendScans, ...rdOnlyScans].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-    }
-
-    return NextResponse.json(
-      degraded
-        ? { scans, degraded }
-        : scans,
-      { status: 200 }
-    );
+    const { userId, user } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const organizationId = getOrganizationId(user);
+    if (!organizationId) return NextResponse.json({ error: "Organization context required" }, { status: 403 });
+    const results = await listVerificationResults({ scope: { organizationId, actorUserId: userId }, userId, limit: 100, offset: 0 });
+    return NextResponse.json(results.rows.map((result) => ({ _id: result.id, scanId: result.scan_id, fileName: result.file_name, fileType: result.file_type, status: result.status, confidenceScore: result.confidence_score, createdAt: result.created_at, imageUrl: result.image_url || "" })), { status: 200 });
   } catch (error) {
-    console.error("Error proxying scans GET request:", error);
-    return NextResponse.json(
-      {
-        scans: [],
-        degraded: "Scan telemetry is temporarily unavailable.",
-      },
-      { status: 200 }
-    );
+    console.error("Error listing PostgreSQL scans:", error);
+    return NextResponse.json({ error: "Scan history unavailable" }, { status: 503 });
   }
 }
-
 export async function POST(req: NextRequest) {
   let chargedUserId: string | null = null;
+  let requestScope: { organizationId: string; actorUserId?: string } | null = null;
   let imageData: string | undefined;
   try {
-    const { userId } = await auth();
+    const { userId, user } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const organizationId = getOrganizationId(user);
+    if (!organizationId) return NextResponse.json({ error: "Organization context required" }, { status: 403 });
+    requestScope = { organizationId, actorUserId: userId };
 
     const contentType = req.headers.get("content-type") || "";
     let uploadedFile: File | null = null;
@@ -487,14 +248,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const chargeResult = await consumeUserCredit(userId);
+    const chargeResult = await consumeUserCredit({ organizationId, actorUserId: userId }, userId);
     if (!chargeResult.ok) {
-      if (chargeResult.reason === "USER_NOT_FOUND") {
-        return NextResponse.json(
-          { error: "User profile not found. Please refresh and try again." },
-          { status: 404 }
-        );
-      }
 
       return NextResponse.json(
         { error: "Insufficient credits. Please top up to continue scanning." },
@@ -503,158 +258,43 @@ export async function POST(req: NextRequest) {
     }
     chargedUserId = userId;
 
-    let rdOutcome: {
-      requestId?: string;
-      status: string;
-      score: number;
-      models: Array<{ name: string; status: string; score: number }>;
-      error?: string;
-    } = {
-      status: "DISABLED",
-      score: 0,
-      models: [],
-    };
-
     if (fileType === "image" && uploadedFile) {
-      if (!imageData) {
+      const mediaBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+      const key = req.headers.get("idempotency-key")?.trim() || "scan:image:" + createHash("sha256").update(mediaBuffer).digest("hex");
+      const started = await beginModelInvocation({
+        scope: requestScope!, idempotencyKey: key, endpointName: process.env.SAGEMAKER_ENDPOINT_NAME!,
+        userId, requestContentType: uploadedFile.type || "application/octet-stream",
+        requestMetadata: { fileName, fileType },
+      });
+      let modelResult: Awaited<ReturnType<typeof analyzeWithGothamModel>>;
+      const scanId = (started.invocation.response_metadata?.scanId as string | undefined) || crypto.randomUUID();
+      if (started.reused && started.invocation.status === "succeeded" && started.invocation.response_metadata?.result) {
+        modelResult = started.invocation.response_metadata.result as Awaited<ReturnType<typeof analyzeWithGothamModel>>;
+      } else if (started.reused) {
+        return NextResponse.json({ error: "A scan with this idempotency key is already processing" }, { status: 409 });
+      } else {
+        const startedAt = Date.now();
         try {
-          const arr = await uploadedFile.arrayBuffer();
-          const b64 = Buffer.from(arr).toString("base64");
-          if (uploadedFile.type) {
-            imageData = `data:${uploadedFile.type};base64,${b64}`;
-          } else {
-            imageData = `data:image/png;base64,${b64}`;
-          }
-        } catch (e) {
-          console.warn("Failed to generate image preview data URL:", e);
+          modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
+          await completeModelInvocation({ scope: requestScope!, id: started.invocation.id, status: "succeeded", latencyMs: Date.now() - startedAt, responseMetadata: { scanId, result: modelResult } });
+        } catch (error) {
+          await completeModelInvocation({ scope: requestScope!, id: started.invocation.id, status: "failed", latencyMs: Date.now() - startedAt, errorCode: "SAGEMAKER_INVOCATION_FAILED", responseMetadata: { scanId } });
+          throw error;
         }
       }
-
-      try {
-        const mediaBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-        const modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
-        const modelStatus = modelResult.label === "FAKE"
-          ? "MANIPULATED"
-          : modelResult.label === "REAL"
-          ? "AUTHENTIC"
-          : "SUSPICIOUS";
-        rdOutcome = {
-          status: modelStatus,
-          score: modelResult.score,
-          models: [{
-            name: modelResult.model,
-            status: modelStatus,
-            score: modelResult.score,
-          }],
-        };
-      } catch (providerError) {
-        console.error("Image provider failed:", providerError);
-        rdOutcome = {
-          status: "ERROR",
-          score: 0,
-          models: [],
-          error: providerError instanceof Error ? providerError.message : String(providerError),
-        };
-      }
-
-      if (rdOutcome.status === "ERROR" && chargedUserId) {
-        await refundUserCredit(chargedUserId);
-        chargedUserId = null;
-      }
-
-      const scanId = `rd-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setJobMeta(scanId, {
-        userId,
-        fileName,
-        fileType,
-        source: isGothamModelConfigured() ? "gotham-model" : "rd-only",
-        createdAt: new Date().toISOString(),
-        imageData,
-      });
-
-      setJobRdAnalysis(scanId, {
-        requestId: rdOutcome.requestId,
-        status: rdOutcome.status,
-        score: rdOutcome.score,
-        models: rdOutcome.models,
-        analyzedAt: new Date().toISOString(),
-        error: rdOutcome.error,
-      });
-
-      let finalStatus = "SUSPICIOUS";
-      let finalConfidence = 50;
-
-      if (rdOutcome.status === "AUTHENTIC") {
-        finalStatus = "AUTHENTIC";
-        finalConfidence = Math.round((1 - rdOutcome.score) * 100);
-      } else if (rdOutcome.status === "MANIPULATED") {
-        finalStatus = "DEEPFAKE";
-        finalConfidence = Math.round(rdOutcome.score * 100);
-      } else if (rdOutcome.status === "ERROR") {
-        finalStatus = "ERROR";
-        finalConfidence = 0;
-      }
-
-      const modelsUsed = rdOutcome.models.map((model) => model.name);
-      const rdUsed = rdOutcome.status !== "DISABLED" && rdOutcome.status !== "ERROR";
-      
-      // Save to MongoDB for dashboard
-      try {
-        await connectToDatabase();
-        await VerificationResult.create({
-          userId,
-          scanId,
-          fileName,
-          fileType,
-          status: (finalStatus === "UNCERTAIN" ? "SUSPICIOUS" : finalStatus) as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
-          confidenceScore: finalConfidence,
-          modelsUsed,
-          requestPath: req.nextUrl.pathname,
-          method: "POST",
-          rdAnalysis: {
-            requestId: rdOutcome.requestId,
-            status: rdOutcome.status,
-            score: rdOutcome.score,
-            models: rdOutcome.models,
-            analyzedAt: new Date().toISOString(),
-            error: rdOutcome.error,
-          },
-          imageUrl: imageData || "",
-          createdAt: new Date(),
-        });
-      } catch (dbError) {
-        console.warn("Failed to save image scan to MongoDB:", dbError);
-      }
-
-      return NextResponse.json(
-        {
-          scanId,
-          status: finalStatus,
-          fileName,
-          fileType,
-          confidenceScore: finalConfidence,
-          dualModel: {
-            fakecatcher: false,
-            realityDefender: false,
-            proprietaryGotham: rdUsed,
-          },
-          rd: rdOutcome.status !== "ERROR" ? {
-            requestId: rdOutcome.requestId,
-            status: rdOutcome.status,
-            score: rdOutcome.score,
-            models: rdOutcome.models,
-          } : null,
-        },
-        { status: rdOutcome.status === "ERROR" ? 500 : 200 }
-      );
+      const status = modelResult.label === "FAKE" ? "DEEPFAKE" : modelResult.label === "REAL" ? "AUTHENTIC" : "SUSPICIOUS";
+      const confidenceScore = Math.round(modelResult.confidence * 100);
+      await insertVerificationResult({ scope: requestScope!, userId, scanId, fileName, fileType, status, confidenceScore, modelsUsed: [modelResult.model], imageUrl: imageData || null, proprietaryAnalysis: { model: modelResult.model, version: modelResult.version, score: modelResult.score, confidence: modelResult.confidence, raw: modelResult.raw } });
+      return NextResponse.json({ scanId, status, fileName, fileType, confidenceScore, model: modelResult.model, version: modelResult.version }, { status: 200 });
     }
     if (fileType === "video" && uploadedFile) {
       const videoBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-      const analysis = await analyzeVideoWithGotham(videoBuffer);
+      const videoKey = req.headers.get("idempotency-key")?.trim() || "scan:video:" + createHash("sha256").update(videoBuffer).digest("hex");
+      const analysis = await analyzeVideoWithGotham(videoBuffer, requestScope!, userId, videoKey);
 
       if (analysis.status === "ERROR") {
         if (chargedUserId) {
-          await refundUserCredit(userId);
+          await refundUserCredit(requestScope!, userId);
           chargedUserId = null;
         }
         return NextResponse.json({ error: analysis.error || "Video analysis failed" }, { status: 502 });
@@ -663,8 +303,8 @@ export async function POST(req: NextRequest) {
       const scanId = `gotham-vid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       try {
-        await connectToDatabase();
-        await VerificationResult.create({
+        await insertVerificationResult({
+          scope: { organizationId, actorUserId: userId },
           userId,
           scanId,
           fileName,
@@ -672,37 +312,14 @@ export async function POST(req: NextRequest) {
           status: analysis.status as "AUTHENTIC" | "SUSPICIOUS" | "DEEPFAKE",
           confidenceScore: analysis.confidenceScore,
           modelsUsed: ["GothamSwinV3"],
-          requestPath: req.nextUrl.pathname,
-          method: "POST",
-          imageUrl: "",
-          createdAt: new Date(),
+          imageUrl: null,
         });
       } catch (dbError) {
-        console.warn("Failed to save video scan to MongoDB:", dbError);
+        console.warn("Failed to save video scan to PostgreSQL:", dbError);
       }
 
-      setJobMeta(scanId, {
-        userId,
-        fileName,
-        fileType,
-        source: "fakecatcher",
-        createdAt: new Date().toISOString(),
-      });
 
-      return NextResponse.json(
-        {
-          scanId,
-          status: analysis.status,
-          fileName,
-          fileType,
-          confidenceScore: analysis.confidenceScore,
-          dualModel: {
-            fakecatcher: true,
-            realityDefender: false,
-          },
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({ scanId, status: analysis.status, fileName, fileType, confidenceScore: analysis.confidenceScore, model: "gotham-core" }, { status: 200 });
     }
 
     return NextResponse.json(
@@ -713,24 +330,13 @@ export async function POST(req: NextRequest) {
     console.error("Error proxying scans POST request:", error);
     if (chargedUserId) {
       try {
-        await refundUserCredit(chargedUserId);
+        await refundUserCredit(requestScope!, chargedUserId);
       } catch (refundError) {
         console.error("Failed to refund user credit after scan error:", refundError);
       }
     }
-    const err = error as { message?: string; cause?: { code?: string } };
-    const timeoutLike =
-      err.cause?.code === "UND_ERR_HEADERS_TIMEOUT" ||
-      err.cause?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-      err.cause?.code === "ABORT_ERR";
-    return NextResponse.json(
-      {
-        error: timeoutLike
-          ? `Backend request timed out after ${Math.round(BACKEND_REQUEST_TIMEOUT_MS / 1000)}s`
-          : `Failed to reach backend: ${err.message || "network error"}`,
-      },
-      { status: timeoutLike ? 504 : 502 }
-    );
+    const message = error instanceof Error ? error.message : "SageMaker verification failed";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
 

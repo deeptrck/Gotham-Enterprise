@@ -25,11 +25,6 @@ type ResultData = {
   imageUrl: string;
   description?: string;
   modelsUsed: string[];
-  fakecatcherSummary?: {
-    confidence?: number;
-    fake_prob?: number;
-    label?: string;
-  } | null;
   feedbackSummary?: {
     falsePositive: number;
     falseNegative: number;
@@ -60,34 +55,6 @@ export default function ResultsPage() {
   const [feedbackLoading, setFeedbackLoading] = useState<"FALSE_POSITIVE" | "FALSE_NEGATIVE" | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
-type ParsedDescription = {
-  rd?: {
-    models?: {
-      name: string;
-      status: "MANIPULATED" | "AUTHENTIC" | "SUSPICIOUS" | string;
-      score: number;
-    }[];
-    fakecatcher?: {
-      confidence?: number;
-      fake_prob?: number;
-      label?: string;
-    };
-    realityDefender?: {
-      status?: string;
-      score?: number;
-      error?: string;
-    };
-    fusion?: {
-      score?: number;
-      status?: string;
-      weights?: {
-        fakecatcher?: number;
-        realityDefender?: number;
-      };
-    };
-  };
-};
-
 useEffect(() => {
   if (!isSignedIn || !id) return;
 
@@ -102,13 +69,6 @@ useEffect(() => {
 
       const data = await fetchResult(scanId);
 
-      let parsed: ParsedDescription = {};
-      try {
-        parsed = JSON.parse(data.description || "{}") as ParsedDescription;
-      } catch {
-        parsed = {};
-      }
-
       setResultData({
         fileName: data.fileName,
         scanId: data.scanId,
@@ -119,7 +79,6 @@ useEffect(() => {
         imageUrl: data.imageUrl || "",
         description: data.description,
         modelsUsed: data.modelsUsed || [],
-        fakecatcherSummary: parsed.rd?.fakecatcher || null,
         feedbackSummary: data.feedbackSummary,
         userFeedback: data.userFeedback,
       });
@@ -255,10 +214,10 @@ useEffect(() => {
         <div className="mt-6 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-neutral-800">
           <h3 className="text-lg font-semibold mb-3">DeepTrack result</h3>
           <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 text-sm">
-            <p className="font-semibold mb-1">FakeCatcher</p>
-            <p>Label: {resultData.fakecatcherSummary?.label || "N/A"}</p>
-            <p>Fake probability: {typeof resultData.fakecatcherSummary?.fake_prob === "number" ? `${(resultData.fakecatcherSummary.fake_prob * 100).toFixed(1)}%` : "N/A"}</p>
-            <p>Confidence: {typeof resultData.fakecatcherSummary?.confidence === "number" ? `${resultData.fakecatcherSummary.confidence.toFixed(1)}%` : "N/A"}</p>
+            <p className="font-semibold mb-1">Gotham Core · AWS SageMaker</p>
+            <p>Models: {resultData.modelsUsed.join(", ") || "Gotham Core"}</p>
+            <p>Decision: {resultData.status}</p>
+            <p>Confidence: {resultData.confidenceScore}%</p>
           </div>
         </div>
 

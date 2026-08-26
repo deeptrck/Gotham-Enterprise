@@ -1,5 +1,4 @@
-import { currentUser } from "@/lib/auth";
-import { auth } from "@/lib/auth";
+import { auth, currentUser, isGothamAdministrator } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { getAdminEmailAllowlist, isEmailAllowlisted } from "@/lib/adminAccess";
 
@@ -16,10 +15,14 @@ export async function GET() {
   ].filter((value): value is string => Boolean(value));
 
   const allowlist = getAdminEmailAllowlist();
-  const allowed = isEmailAllowlisted(emails, allowlist);
+  const roleVerified = isGothamAdministrator(user);
+  const emailVerified = isEmailAllowlisted(emails, allowlist);
+  const allowed = roleVerified && emailVerified;
 
   return NextResponse.json({
     allowed,
     configured: allowlist.length > 0,
+    roleVerified,
+    emailVerified,
   });
 }
