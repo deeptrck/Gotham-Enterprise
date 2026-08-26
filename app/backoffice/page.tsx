@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { formatDateHuman } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,7 +78,8 @@ interface DashboardStats {
 // ─── Data fetching hooks ─────────────────────────────────────────────────────
 
 function useBackofficeData(duration: string) {
-  const { user, isLoaded } = useUser();
+  const { user, isLoading } = useUser();
+  const isLoaded = !isLoading;
   const [scans, setScans] = useState<Scan[]>([]);
   const [clients, setClients] = useState<ClientCredit[]>([]);
   const [fpItems, setFpItems] = useState<FPItem[]>([]);

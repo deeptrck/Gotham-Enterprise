@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 
 // Define User schema inline to avoid import issues
 const userSchema = new mongoose.Schema({
-  clerkId: { type: String, required: true, unique: true },
+  auth0Sub: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
   fullName: { type: String, required: true },
   imageUrl: { type: String },
@@ -49,7 +49,7 @@ async function assignCredits(email, credits) {
     console.log(`✅ Successfully assigned ${credits} credits to ${email}`);
     console.log(`User details:`, {
       email: user.email,
-      fullName: user.fullName,
+      fullName: user.name,
       credits: user.credits,
       plan: user.plan
     });

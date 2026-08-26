@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { fetchResult, submitResultFeedback } from "@/lib/api";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { FileDown } from "lucide-react";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
 import * as Sentry from "@sentry/nextjs";
@@ -52,7 +52,8 @@ const modelMap: Record<string, { label: string; description: string }> = {
 
 export default function ResultsPage() {
   const { id } = useParams();
-  const { isSignedIn } = useUser();
+  const { user } = useUser();
+  const isSignedIn = Boolean(user);
   const [resultData, setResultData] = useState<ResultData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

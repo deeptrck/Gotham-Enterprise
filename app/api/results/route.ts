@@ -5,20 +5,16 @@ import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
 
 const BACKEND_API_URL = (
-  process.env.BACKEND_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://facedetectionsystem.onrender.com"
+  process.env.BACKEND_API_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+  ""
 ).replace(/\/$/, "");
 const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
   5000,
   parseInt(process.env.BACKEND_REQUEST_TIMEOUT_MS || "90000", 10)
 );
 
-// Note: removed transient timeout wrapper to restore original DB behaviour
-
-function buildBackendUrl(path: string) {
-  return `${BACKEND_API_URL}${path}`;
-}
+// Legacy backend access is intentionally disabled when no explicit URL is configured.
 
 function mapJobStatus(status?: string) {
   if (status === "done") return "AUTHENTIC";

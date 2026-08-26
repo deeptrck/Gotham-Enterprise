@@ -1,344 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
-import { UploadCloud, Image as ImageIcon, Video, AudioWaveform, Shield, Globe, UsersRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createScan } from "@/lib/api";
-import { CheckCircle, XCircle, Clock } from "lucide-react";
-import * as Sentry from "@sentry/nextjs";
+import Image from "next/image";
+import Link from "next/link";
+import { useUser } from "@auth0/nextjs-auth0/client";
+import { ArrowRight, CheckCircle2, ChevronRight, FileCheck2, LockKeyhole, Radar, ShieldCheck, Sparkles, Users2 } from "lucide-react";
 
+const capabilities = [
+  { icon: Radar, title: "Detect synthetic media", body: "Run high-signal image, video, and audio verification workflows with explainable confidence and model provenance." },
+  { icon: FileCheck2, title: "Verify evidence", body: "Bring C2PA provenance, review decisions, and operational context together in a controlled verification record." },
+  { icon: Users2, title: "Govern every relationship", body: "Give teams, partners, and customers the right access through explicit roles, customer boundaries, and audit trails." },
+];
 
-type UploadProgress = {
-  fileName: string;
-  status: "uploading" | "done" | "error";
-  progress: number;
-  error?: string;
-};
+const stats = [
+  ["01", "Ingest", "Bring media, URLs, and API traffic into one controlled workflow."],
+  ["02", "Assess", "Combine proprietary model signals with provenance and analyst review."],
+  ["03", "Act", "Create defensible decisions with complete evidence and audit history."],
+];
 
-export default function EnterpriseUpload() {
-  const router = useRouter();
-  const { isSignedIn } = useUser();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [urlInput, setUrlInput] = useState("");
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([])
+export default function HomePage() {
+  const { user } = useUser();
+  const isSignedIn = Boolean(user);
+  const firstName = user?.given_name || user?.name?.split(" ")[0];
 
-const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files || files.length === 0) return;
+  return <main className="min-h-screen bg-[#f7fafb] text-[#0A0E1A]">
+    <section className="overflow-hidden bg-[#0A0E1A] text-white">
+      <nav className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-5 lg:px-10"><Link href="/" className="flex items-center gap-3"><Image src="/logo-dark.jpg" alt="Deeptrack" width={36} height={36} className="rounded-xl border border-white/10 bg-black p-1 object-cover" /><span className="text-sm font-semibold tracking-[0.18em]">DEEPTRACK</span></Link><div className="hidden items-center gap-8 text-sm text-slate-300 md:flex"><a href="#platform" className="transition hover:text-white">Platform</a><a href="#how-it-works" className="transition hover:text-white">How it works</a><Link href="/client-admin" className="transition hover:text-white">Client Admin</Link><Link href="/backoffice" className="transition hover:text-white">Back Office</Link></div><div className="flex items-center gap-3">{isSignedIn ? <Link href="/dashboard" className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-300/50 hover:bg-white/5">{firstName ? `Open ${firstName}'s workspace` : "Open workspace"}</Link> : <Link href="/auth/login" className="rounded-full bg-cyan-400 px-4 py-2 text-sm font-bold text-[#04141b] transition hover:bg-cyan-300">Sign in</Link>}</div></nav>
+      <div className="relative mx-auto max-w-[1440px] px-6 pb-20 pt-16 lg:px-10 lg:pb-28 lg:pt-24"><div className="pointer-events-none absolute -right-32 -top-40 h-[560px] w-[560px] rounded-full bg-cyan-400/10 blur-3xl" /><div className="relative grid items-end gap-12 lg:grid-cols-[1.1fr_.9fr]"><div><div className="mb-7 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-200"><Sparkles size={14} /> Enterprise media integrity</div><h1 className="max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.055em] sm:text-6xl lg:text-[78px]">Trust the signal.<br /><span className="text-cyan-300">Defend the decision.</span></h1><p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300">Gotham is Deeptrack’s intelligence platform for verifying media, managing evidence, and governing high-stakes digital risk across your organization.</p><div className="mt-9 flex flex-col gap-3 sm:flex-row">{isSignedIn ? <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3.5 text-sm font-bold text-[#04141b] transition hover:bg-cyan-300">Enter Gotham <ArrowRight size={17} /></Link> : <Link href="/auth/login" className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3.5 text-sm font-bold text-[#04141b] transition hover:bg-cyan-300">Access the platform <ArrowRight size={17} /></Link>}<a href="#platform" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-5 py-3.5 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/5">Explore the platform <ChevronRight size={17} /></a></div><div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-400"><span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-cyan-300" /> Auth0 protected</span><span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-cyan-300" /> Customer-scoped</span><span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-cyan-300" /> Audit-ready</span></div></div><div className="relative rounded-3xl border border-white/10 bg-white/[0.055] p-5 shadow-2xl shadow-black/20 backdrop-blur"><div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Live intelligence layer</p><p className="mt-1 text-sm font-semibold text-white">Gotham command view</p></div><span className="flex items-center gap-2 text-xs text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Operational</span></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl bg-[#101a29] p-4"><p className="text-xs text-slate-400">Media assessed</p><p className="mt-3 text-3xl font-semibold">24,891</p><p className="mt-1 text-xs text-emerald-300">+18.4% this month</p></div><div className="rounded-2xl bg-[#101a29] p-4"><p className="text-xs text-slate-400">Signal confidence</p><p className="mt-3 text-3xl font-semibold">96.8%</p><p className="mt-1 text-xs text-cyan-300">Across active models</p></div></div><div className="mt-3 rounded-2xl bg-[#101a29] p-4"><div className="mb-4 flex items-center justify-between"><p className="text-xs text-slate-400">Risk distribution</p><p className="text-xs font-semibold text-slate-300">Last 30 days</p></div><div className="flex h-28 items-end gap-2">{[32,45,38,62,54,76,68,84,58,72,91,79,88,70,96,82,74,90].map((height, index) => <div key={index} className="flex-1 rounded-t bg-gradient-to-t from-cyan-500/30 to-cyan-300" style={{ height: `${height}%`, opacity: index % 4 === 0 ? .55 : .9 }} />)}</div></div><div className="mt-3 flex items-center gap-3 rounded-2xl border border-cyan-300/15 bg-cyan-300/5 p-4"><ShieldCheck size={21} className="text-cyan-300" /><div><p className="text-sm font-semibold">Evidence chain protected</p><p className="mt-1 text-xs leading-5 text-slate-400">Every action is attributable, reviewable, and scoped to the customer workspace.</p></div></div></div></div></div>
+    </section>
 
-  if (!isSignedIn) {
-    router.push("/login");
-    return;
-  }
+    <section className="border-b border-slate-200 bg-white"><div className="mx-auto grid max-w-[1440px] gap-0 px-6 md:grid-cols-3 lg:px-10">{stats.map(([number, title, body]) => <div key={number} className="border-slate-200 py-7 md:border-r md:px-8 md:first:pl-0 md:last:border-r-0"><div className="flex gap-4"><span className="font-mono text-xs font-bold text-cyan-700">{number}</span><div><h3 className="text-base font-semibold">{title}</h3><p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">{body}</p></div></div></div>)}</div></section>
 
-  setLoading(true);
-  setError(null);
+    <section id="platform" className="mx-auto max-w-[1440px] px-6 py-20 lg:px-10 lg:py-28"><div className="max-w-2xl"><p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-700">One operating system for trust</p><h2 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Built for the moments where evidence matters.</h2><p className="mt-5 text-lg leading-8 text-slate-500">Move beyond a single detection score. Gotham brings signal, provenance, workflow, and governance into a system your teams can operate with confidence.</p></div><div className="mt-12 grid gap-5 md:grid-cols-3">{capabilities.map(({ icon: Icon, title, body }) => <article key={title} className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-cyan-300 hover:shadow-xl hover:shadow-cyan-900/5"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700"><Icon size={21} /></div><h3 className="mt-8 text-xl font-semibold tracking-tight">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-500">{body}</p><div className="mt-7 flex items-center gap-1 text-xs font-bold uppercase tracking-[0.16em] text-cyan-700 opacity-0 transition group-hover:opacity-100">Explore capability <ArrowRight size={14} /></div></article>)}</div></section>
 
-  // Initialize progress for each file
-  const progressArray: UploadProgress[] = Array.from(files).map(f => ({
-    fileName: f.name,
-    status: "uploading",
-    progress: 0,
-  }));
-  setUploadProgress(progressArray);
+    <section id="how-it-works" className="bg-[#eef7f9] px-6 py-20 lg:px-10 lg:py-28"><div className="mx-auto grid max-w-[1440px] items-center gap-12 lg:grid-cols-[.75fr_1.25fr]"><div><p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-700">Designed for accountable operations</p><h2 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">A clear path from uncertainty to action.</h2><p className="mt-5 max-w-lg text-base leading-7 text-slate-600">From a first upload to a board-level decision, every Gotham workflow is designed to keep people, policy, and evidence aligned.</p><Link href={isSignedIn ? "/client-admin" : "/auth/login"} className="mt-8 inline-flex items-center gap-2 rounded-xl bg-[#0A0E1A] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800">{isSignedIn ? "Open administration" : "Start securely"} <ArrowRight size={17} /></Link></div><div className="space-y-4">{[["01", "Connect your operation", "Bring in media, APIs, teams, and customer context through secure, governed entry points."], ["02", "Investigate with signal", "Combine proprietary model analysis, provenance, and human review into one evidence record."], ["03", "Govern the outcome", "Enforce roles, customer boundaries, audit trails, and a repeatable decision standard."]].map(([number, title, body]) => <div key={number} className="flex gap-5 rounded-2xl border border-cyan-900/10 bg-white/80 p-5"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0A0E1A] font-mono text-xs font-bold text-cyan-300">{number}</div><div><h3 className="font-semibold">{title}</h3><p className="mt-1 text-sm leading-6 text-slate-500">{body}</p></div></div>)}</div></div></section>
 
-  const updateProgress = (
-    fileName: string,
-    progress: number,
-    status: UploadProgress["status"],
-    error?: string
-  ) => {
-    setUploadProgress(prev =>
-      prev.map(p =>
-        p.fileName === fileName ? { ...p, progress, status, error } : p
-      )
-    );
-  };
+    <section className="mx-auto max-w-[1440px] px-6 py-20 lg:px-10 lg:py-24"><div className="rounded-3xl bg-[#0A0E1A] px-6 py-12 text-center text-white md:px-12"><p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-300">The Deeptrack standard</p><h2 className="mx-auto mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Make every high-stakes media decision more defensible.</h2><p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300">Gotham is the operating layer for teams that cannot afford to rely on uncertainty alone.</p><div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">{isSignedIn ? <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3.5 text-sm font-bold text-[#04141b]">Enter Gotham <ArrowRight size={17} /></Link> : <Link href="/auth/login" className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3.5 text-sm font-bold text-[#04141b]">Access the platform <ArrowRight size={17} /></Link>}<Link href="/report-bug" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-5 py-3.5 text-sm font-semibold text-white">Talk to Deeptrack <ArrowRight size={17} /></Link></div></div></section>
 
-  type ScanCreateResponse = { scanId: string; status?: string; [key: string]: unknown };
-  const results: ScanCreateResponse[] = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-
-    try {
-      updateProgress(file.name, 20, "uploading");
-
-      // Call API
-      const result = await createScan({
-        fileName: file.name,
-        fileType: file.type.startsWith("image/")
-          ? "image"
-          : file.type.startsWith("video/")
-          ? "video"
-          : "audio",
-        file,
-      });
-
-      updateProgress(file.name, 80, "uploading");
-
-      // Success
-      results.push(result);
-      updateProgress(file.name, 100, "done");
-    } catch (err: unknown) {
-      console.error("Upload error for", file.name, err);
-      Sentry.captureException(err);
-      const message = err instanceof Error ? err.message : String(err);
-      updateProgress(file.name, 0, "error", message);
-      setError(message);
-      setLoading(false);
-    }
-  }
-
-  setLoading(false);
-
-  // Navigate to results page if at least one successful file
-  if (results.length === 1) {
-    router.push(`/results/${results[0].scanId}`);
-  } else if (results.length > 1) {
-    router.push(`/results/bulk?ids=${results.map(r => r.scanId).join(",")}`);
-  }
-  
-};
-
-const handleUrlSubmit = async () => {
-  if (!urlInput.trim()) {
-    setError("Please enter a URL");
-    return;
-  }
-
-  if (!isSignedIn) {
-    router.push("/login");
-    return;
-  }
-
-  try {
-    setLoading(true);
-    setError(null);
-
-    // Normalize
-    let normalizedUrl = urlInput.trim();
-    if (!/^https?:\/\//i.test(normalizedUrl)) {
-      normalizedUrl = "https://" + normalizedUrl;
-    }
-
-    // Detect file type from URL
-    const fileType = getFileTypeFromUrl(normalizedUrl);
-
-    const result = await createScan({
-      fileName: new URL(normalizedUrl).pathname.split("/").pop() || "media-file",
-      fileType,
-      url: normalizedUrl,
-    });
-
-    router.push(`/results/${result.scanId}`);
-  } catch (err: unknown) {
-    console.error("URL scan error:", err);
-    Sentry.captureException(err);
-    const message = err instanceof Error ? err.message : String(err);
-    setError(message || "Failed to scan URL");
-  } finally {
-    setLoading(false);
-  }
-};
-
-const getFileTypeFromUrl = (url: string) => {
-  const ext = url.split(".").pop()?.toLowerCase();
-
-  if (!ext) return "image";
-
-  if (["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext)) return "image";
-  if (["mp4", "mov", "avi", "mkv"].includes(ext)) return "video";
-  if (["mp3", "wav", "ogg", "m4a"].includes(ext)) return "audio";
-
-  return "image";
-};
-
-  return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-white dark:from-background dark:to-background" >
-      {/* Hero Section */}
-      <section className="mx-auto max-w-4xl text-center px-6 py-14">
-        <h1 className="text-4xl md:text-5xl font-bold dark:text-white tracking-tight text-slate-900">
-          Secure Media Integrity <br />
-          <span className="text-sky-500 dark:text-sky-400">Enterprise-Grade Protection</span>
-        </h1>
-        <p className="mt-4 text-lg text-slate-600 dark:text-gray-400 max-w-2xl mx-auto">
-          Advanced deepfake detection and C2PA provenance verification for newsrooms,
-          ensuring authentic media in an age of synthetic content.
-        </p>
-      </section>
-
-      {/* Upload Area */}
-<main className="flex-1">
-      <div className="mx-auto max-w-2xl px-6">
-<Card className="shadow-lg border border-dashed border-sky-500 dark:border-sky-400 dark:bg-card/50 bg-white rounded-2xl">
-  <CardContent className="p-8 space-y-8">
-    {error && (
-      <div className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 p-3 rounded-md text-sm">
-        {error}
-      </div>
-    )}
-
-    {/* File Upload Area */}
-    <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-sky-500 dark:hover:border-sky-400 rounded-xl p-10 transition bg-white dark:bg-card/50">
-      <UploadCloud className="h-12 w-12 text-sky-500 dark:text-sky-400 mb-3" />
-      <p className="font-semibold text-slate-700 dark:text-slate-200 mb-2">
-        Upload Media for Verification
-      </p>
-      <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400 mb-3">
-        <span className="flex items-center gap-1">
-          <Video className="h-4 w-4" /> Video
-        </span>
-        <span className="flex items-center gap-1">
-          <ImageIcon className="h-4 w-4" /> Image
-        </span>
-        <span className="flex items-center gap-1">
-          <AudioWaveform className="h-4 w-4" /> Audio
-        </span>
-      </div>
-
-      {/* Browse Files Button */}
-      <Button
-        size="lg"
-        onClick={() => document.getElementById("file-input")?.click()}
-        disabled={loading}
-        className="bg-slate-900 hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-600 text-white rounded-xl px-6"
-      >
-        {loading ? "Processing..." : "Browse Files"}
-      </Button>
-
-      <input
-        type="file"
-        id="file-input"
-        accept="image/*,video/*,audio/*"
-        multiple
-        onChange={handleFileUpload}
-        style={{ display: "none" }}
-        disabled={loading}
-      />
-
-      {/* Upload Progress */}
-      {uploadProgress.length > 0 && (
-        <div className="mt-6 w-full space-y-3">
-          {uploadProgress.map((p, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <div className="flex justify-between items-center text-sm">
-                <span className="font-medium truncate">{p.fileName}</span>
-                <span className="flex items-center gap-1 text-xs">
-                  {p.status === "done" && <CheckCircle className="h-4 w-4 text-green-600" />}
-                  {p.status === "error" && <XCircle className="h-4 w-4 text-red-600" />}
-                  {p.status === "uploading" && <Clock className="h-4 w-4 text-sky-600 animate-spin-slow" />}
-                  {p.status === "uploading" && <span>{Math.round(p.progress)}%</span>}
-              </span>
-              </div>
-              {/* Progress Bar */}
-              {p.status === "uploading" && (
-                <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-2 bg-sky-500 dark:bg-sky-400 rounded-full transition-all"
-                    style={{ width: `${p.progress}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-
-{/* URL Scan Input + Button */}
-<div className="flex w-full flex-col sm:flex-row gap-3 sm:gap-2">
-  <input
-    type="text"
-    placeholder="Paste media URL here..."
-    value={urlInput}
-    onChange={(e) => setUrlInput(e.target.value)}
-    disabled={loading}
-    className="flex-1 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm 
-               focus:outline-none focus:ring-2 focus:ring-sky-500 
-               dark:bg-background/50 dark:text-white disabled:opacity-50
-               w-full"
-  />
-
-  <Button
-    size="default"
-    onClick={handleUrlSubmit}
-    disabled={loading}
-    className="bg-slate-900 hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-600 
-               text-white rounded-md px-4 
-               w-full sm:w-auto"  // full width on mobile, auto width otherwise
-  >
-    {loading ? "Processing..." : "Add File"}
-  </Button>
-</div>
-
-    <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-4">
-      1 scan = 1 credit. Enterprise plans start at 500 credits/month.
-    </p>
-
-    <p className="text-xs text-slate-500 dark:text-slate-200 text-center">
-      Max file size: 50MB (video). Accepted formats: JPG, JPEG, PNG, GIF, WEBP, BMP, MP3, WAV, OGG, M4A, AAC, FLAC, MP4, MOV, AVI, MKV
-    </p>
-  </CardContent>
-</Card>
-      </div>
-    </main>
-<div className="grid grid-cols-1 sm:grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6 mb-8 mt-10 px-6">
-  {/* AI-Powered Detection */}
-  <Card className="bg-card/60 border dark:border-gray-800 shadow-lg rounded-lg flex flex-col items-center justify-center text-center p-6">
-    <CardHeader className="flex items-center justify-center">
-      <div className="flex items-center justify-center p-2 rounded-full bg-green-500/10">
-        <Shield className="h-8 w-8 text-green-400/70" />
-      </div>
-    </CardHeader>
-    <CardContent>
-      <CardTitle className="text-gray-500 dark:text-gray-200 text-base font-semibold mb-2">
-        AI-Powered Detection
-      </CardTitle>
-      <p className="text-sm text-gray-400">
-        Overview of all claims submitted to the system.
-      </p>
-    </CardContent>
-  </Card>
-
-  {/* C2PA Provenance */}
-  <Card className="bg-card/60 border dark:border-gray-800 shadow-lg rounded-lg flex flex-col items-center justify-center text-center p-6">
-    <CardHeader className="flex items-center justify-center">
-      <div className="flex items-center justify-center p-2 rounded-full bg-slate-400/10">
-        <Globe className="h-8 w-8 text-slate-400/70" />
-      </div>
-    </CardHeader>
-    <CardContent>
-      <CardTitle className="text-gray-500 dark:text-gray-200 text-base font-semibold mb-2">
-        C2PA Provenance
-      </CardTitle>
-      <p className="text-sm text-gray-400">
-        Complete media lineage tracking and authenticity verification
-      </p>
-    </CardContent>
-  </Card>
-
-  {/* Enterprise Ready */}
-  <Card className="bg-card/60 border dark:border-gray-800 shadow-lg rounded-lg flex flex-col items-center justify-center text-center p-6">
-    <CardHeader className="flex items-center justify-center">
-      <div className="flex items-center justify-center p-2 rounded-full bg-yellow-500/10">
-        <UsersRound className="h-8 w-8 text-yellow-500/70" />
-      </div>
-    </CardHeader>
-    <CardContent>
-      <CardTitle className="text-gray-500 dark:text-gray-200 text-base font-semibold mb-2">
-        Enterprise Ready
-      </CardTitle>
-      <p className="text-sm text-gray-400">
-        Multi-tenant architecture with advanced user management
-      </p>
-    </CardContent>
-  </Card>
-</div>
-        </div>
-  );
+    <footer className="border-t border-slate-200 bg-white px-6 py-8 lg:px-10"><div className="mx-auto flex max-w-[1440px] flex-col gap-3 text-xs text-slate-400 md:flex-row md:items-center md:justify-between"><div className="flex items-center gap-3"><Image src="/logo-dark.jpg" alt="Deeptrack" width={28} height={28} className="rounded-lg border border-slate-200 bg-black p-1 object-cover" /><span>Deeptrack Gotham · Enterprise media integrity</span></div><div className="flex items-center gap-5"><span className="flex items-center gap-1.5"><LockKeyhole size={13} /> Auth0 protected</span><span>© {new Date().getFullYear()} Deeptrack</span></div></div></footer>
+  </main>;
 }

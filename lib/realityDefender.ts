@@ -5,6 +5,7 @@ import path from "path";
 import fetch from "node-fetch";
 
 const RD_MOCK = (process.env.RD_MOCK || "false").toLowerCase() === "true";
+const REALITY_DEFENDER_ENABLED = (process.env.REALITY_DEFENDER_ENABLED ?? "true").toLowerCase() === "true";
 
 export interface RDModelResult {
   name: string;
@@ -25,6 +26,10 @@ export async function verifyMedia(options: {
   headers?: IncomingHttpHeaders;
   fileType?: "image" | "video" | "audio";
 }): Promise<RDResult> {
+  if (!REALITY_DEFENDER_ENABLED) {
+    throw new Error("Reality Defender provider is disabled; use the proprietary Gotham model provider");
+  }
+
   if (RD_MOCK) {
     return {
       requestId: "mock-job",

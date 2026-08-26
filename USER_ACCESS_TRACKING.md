@@ -14,7 +14,7 @@ This implementation tracks user email access to your website and stores it in Mo
 The middleware automatically logs all authenticated user access. No code changes needed for most routes.
 
 **What gets logged:**
-- `clerkId`: User's Clerk ID
+- `auth0Sub`: User's Auth0 ID
 - `email`: User's email (from User model)
 - `accessType`: Either `"page_visit"` or `"api_call"`
 - `routePath`: The path accessed (e.g., `/dashboard`, `/api/results`)
@@ -27,15 +27,15 @@ Use the admin API endpoint to get currently active users:
 ```bash
 # Get users active in last 24 hours (default)
 curl -X GET "http://localhost:3000/api/admin/active-users" \
-  -H "Authorization: Bearer YOUR_CLERK_TOKEN"
+  -H "Authorization: Bearer YOUR_AUTH0_TOKEN"
 
 # Get users active in last 7 days
 curl -X GET "http://localhost:3000/api/admin/active-users?hours=168" \
-  -H "Authorization: Bearer YOUR_CLERK_TOKEN"
+  -H "Authorization: Bearer YOUR_AUTH0_TOKEN"
 
 # Get users active in last hour
 curl -X GET "http://localhost:3000/api/admin/active-users?hours=1" \
-  -H "Authorization: Bearer YOUR_CLERK_TOKEN"
+  -H "Authorization: Bearer YOUR_AUTH0_TOKEN"
 ```
 
 ### 3. API Response Example
@@ -48,7 +48,7 @@ curl -X GET "http://localhost:3000/api/admin/active-users?hours=1" \
   "data": [
     {
       "email": "user1@example.com",
-      "clerkId": "user_abc123",
+      "auth0Sub": "user_abc123",
       "lastAccessedAt": "2026-03-12T09:15:00.000Z",
       "accessCount": 15,
       "recentActivities": [
@@ -76,7 +76,7 @@ curl -X GET "http://localhost:3000/api/admin/active-users?hours=1" \
 ```typescript
 {
   _id: ObjectId,
-  clerkId: string,        // Required, indexed
+  auth0Sub: string,        // Required, indexed
   email: string,          // Required, indexed
   accessType: "page_visit" | "api_call",
   routePath: string,      // e.g., "/dashboard"
@@ -95,11 +95,11 @@ If you need to manually log access in a custom API route:
 
 ```typescript
 import { logUserAccess } from "@/lib/logUserAccess";
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@auth0/nextjs/server";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
-  
+
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
   // Log the access (non-blocking)
   logUserAccess({
-    clerkId: userId,
+    auth0Sub: userId,
     accessType: "api_call",
     routePath: "/api/my-custom-route",
     method: "POST",
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
 ## Database Indexes
 
 The UserAccess model includes the following indexes for efficient queries:
-- `clerkId` + `lastAccessedAt` (for per-user queries)
+- `auth0Sub` + `lastAccessedAt` (for per-user queries)
 - `email` + `lastAccessedAt` (for email lookups)
 - `lastAccessedAt` (for finding all active users in timeframe)
 
@@ -132,7 +132,7 @@ This ensures queries are fast even with millions of access records.
 ## Access Control
 
 The `/api/admin/active-users` endpoint requires:
-- Valid Clerk authentication (logged-in user)
+- Valid Auth0 authentication (logged-in user)
 - Admin email (must be in `ADMIN_EMAILS` environment variable)
 
 Non-admin users will receive a 403 Forbidden response.
@@ -154,8 +154,8 @@ Get all users active in last 24 hours:
 db.useraccess.aggregate([
   {
     $match: {
-      lastAccessedAt: { 
-        $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) 
+      lastAccessedAt: {
+        $gte: new Date(Date.now() - 24 * 60 * 60 * 1000)
       }
     }
   },

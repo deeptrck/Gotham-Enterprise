@@ -6,7 +6,7 @@ import { LogOut, LogIn, UserPlus, Menu, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,8 +16,8 @@ import {
 
 export default function Header() {
   const pathname = usePathname();
-  const { user, isSignedIn, isLoaded } = useUser();
-  const { signOut } = useClerk();
+  const { user, isLoading } = useUser();
+  const isSignedIn = Boolean(user);
   const [canAccessAdmin, setCanAccessAdmin] = useState(false);
 
   useEffect(() => {
@@ -110,6 +110,14 @@ export default function Header() {
             </Link>
             {canAccessAdmin && (
               <Link
+                href="/client-admin"
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
+              >
+                Client Admin
+              </Link>
+            )}
+            {canAccessAdmin && (
+              <Link
                 href="/admin/dashboard"
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-500"
               >
@@ -145,10 +153,11 @@ export default function Header() {
           Pricing &amp; Billing
         </Link>
 
-        {!isLoaded ? (
+        {isLoading ? (
           <Button
             variant="ghost"
-            className="text-sm text-gray-700 dark:text-gray-300 hover:text-blue-500"
+            disabled
+            className="text-sm text-gray-400 dark:text-gray-500"
           >
             Account
           </Button>
@@ -157,8 +166,8 @@ export default function Header() {
             <DropdownMenuTrigger asChild>
               <button className="flex items-center">
                 <Image
-                  src={user.imageUrl || "/avatar.png"}
-                  alt={user.fullName || "User Avatar"}
+                  src={user?.picture || "/avatar.png"}
+                  alt={user?.name || "User Avatar"}
                   width={36}
                   height={36}
                   className="rounded-full border border-gray-300 dark:border-gray-700"
@@ -167,13 +176,13 @@ export default function Header() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800">
               <div className="px-3 py-2 text-sm">
-                <p className="font-medium text-gray-800 dark:text-gray-200">{user.fullName}</p>
+                <p className="font-medium text-gray-800 dark:text-gray-200">{user?.name || "User"}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {user.primaryEmailAddress?.emailAddress}
+                  {user?.email || ""}
                 </p>
               </div>
               <DropdownMenuItem
-                onClick={() => signOut()}
+                onClick={() => { window.location.href = "/auth/logout"; }}
                 className="cursor-pointer hover:bg-red-100 dark:hover:bg-gray-900 text-red-600 dark:text-red-400"
               >
                 <LogOut className="h-4 w-4 mr-2" /> Logout
@@ -217,9 +226,9 @@ export default function Header() {
       {/* Mobile menu (hamburger) */}
       <div className="flex md:hidden items-center gap-2">
         {/* <ThemeToggle /> */}
-        {!isLoaded ? (
-          <Button variant="ghost" size="icon" aria-label="Open menu">
-            <Menu className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+        {isLoading ? (
+          <Button variant="ghost" size="icon" disabled aria-label="Loading menu">
+            <Menu className="h-6 w-6 text-gray-400 dark:text-gray-500" />
           </Button>
         ) : (
           <DropdownMenu>
@@ -239,6 +248,11 @@ export default function Header() {
                   </DropdownMenuItem>
                   {canAccessAdmin && (
                     <DropdownMenuItem asChild>
+                      <Link href="/client-admin" className="text-gray-800 dark:text-gray-200">Client Admin</Link>
+                    </DropdownMenuItem>
+                  )}
+                  {canAccessAdmin && (
+                    <DropdownMenuItem asChild>
                       <Link href="/admin/dashboard" className="text-gray-800 dark:text-gray-200">Admin</Link>
                     </DropdownMenuItem>
                   )}
@@ -255,7 +269,7 @@ export default function Header() {
               </DropdownMenuItem>
               {isSignedIn ? (
                 <DropdownMenuItem
-                  onClick={() => signOut()}
+                  onClick={() => { window.location.href = "/auth/logout"; }}
                   className="cursor-pointer hover:bg-red-100 dark:hover:bg-gray-900 text-red-600 dark:text-red-400"
                 >
                   <LogOut className="h-4 w-4 mr-2" /> Logout

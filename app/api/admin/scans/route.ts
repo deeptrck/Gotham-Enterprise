@@ -1,5 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@/lib/auth";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { VerificationResult } from "@/lib/models/VerificationResult";
@@ -74,8 +74,8 @@ export async function GET(req: NextRequest) {
     const scans = results;
 
     // Get user details only for the scans we're returning
-    const users = await User.find({ clerkId: { $in: userIds } }).lean();
-    const userMap = new Map(users.map((u) => [u.clerkId, u]));
+    const users = await User.find({ auth0Sub: { $in: userIds } }).lean();
+    const userMap = new Map(users.map((u) => [u.auth0Sub, u]));
 
     // Transform scans to include client name
     const transformedScans = scans.map((scan) => {

@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IPayment extends Document {
   reference: string;
-  clerkId?: string;
+  auth0Sub?: string;
   email?: string;
   amount: number;
   currency: string;
@@ -17,7 +17,7 @@ export interface IPayment extends Document {
 const paymentSchema = new Schema<IPayment>(
   {
     reference: { type: String, required: true, unique: true },
-    clerkId: { type: String },
+    auth0Sub: { type: String },
     email: { type: String },
     amount: { type: Number, required: true },
     currency: { type: String, required: true },

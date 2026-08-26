@@ -4,12 +4,12 @@
 
 Your Gotham-Enterprise app now has **full MongoDB integration** with:
 
-✅ **Database Connection** - Mongoose with connection pooling  
-✅ **User Sync** - Automatic sync from Clerk  
-✅ **Scan Storage** - All verification results in MongoDB  
-✅ **Credit System** - Track and manage user credits  
-✅ **API Endpoints** - RESTful routes for all operations  
-✅ **Real Frontend** - Dashboard, history, results all use live data  
+✅ **Database Connection** - Mongoose with connection pooling
+✅ **User Sync** - Automatic sync from Auth0
+✅ **Scan Storage** - All verification results in MongoDB
+✅ **Credit System** - Track and manage user credits
+✅ **API Endpoints** - RESTful routes for all operations
+✅ **Real Frontend** - Dashboard, history, results all use live data
 
 ---
 
@@ -35,8 +35,8 @@ In your project root, create `.env.local`:
 ```env
 MONGODB_URI=
 
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
-CLERK_SECRET_KEY=your_clerk_secret
+NEXT_PUBLIC_AUTH0_PUBLISHABLE_KEY=your_auth0_key
+AUTH0_SECRET_KEY=your_auth0_secret
 ```
 
 ### Step 3: Run the Project
@@ -134,7 +134,7 @@ app/results/page.tsx                    # Real results from MongoDB
 
 ### Users Table
 ```
-- clerkId (unique)
+- auth0Sub (unique)
 - email
 - fullName
 - imageUrl
@@ -164,7 +164,7 @@ app/results/page.tsx                    # Real results from MongoDB
 
 ### On User Login:
 ```
-1. Clerk authenticates user
+1. Auth0 authenticates user
 2. UserSyncProvider detects login
 3. Automatically calls POST /api/users/sync
 4. User saved to MongoDB with 10 credits
@@ -200,13 +200,13 @@ MONGODB_URI=your_connection_string
 Then restart dev server.
 
 ### Error: "Unauthorized" on API calls
-**Fix:** Make sure you're logged in with Clerk. Check Clerk keys in `.env.local`.
+**Fix:** Make sure you're logged in with Auth0. Check Auth0 keys in `.env.local`.
 
 ### Error: 402 "Insufficient credits"
 **Fix:** This happens when user has 0 credits. Upgrade plan or purchase credits.
 
 ### Scans not showing in history
-**Fix:** 
+**Fix:**
 1. Make sure MongoDB connection is working
 2. Check browser console for errors
 3. Verify user is logged in
@@ -227,11 +227,11 @@ Then restart dev server.
 
 ## 🔐 Security Notes
 
-✅ All endpoints require Clerk authentication  
-✅ Users can only access their own data  
-✅ Passwords NOT stored (Clerk handles auth)  
-✅ Server validates all requests  
-✅ Credits checked before operations  
+✅ All endpoints require Auth0 authentication
+✅ Users can only access their own data
+✅ Passwords NOT stored (Auth0 handles auth)
+✅ Server validates all requests
+✅ Credits checked before operations
 
 ---
 

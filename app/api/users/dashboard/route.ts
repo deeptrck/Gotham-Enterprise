@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     // Fetch user and scans in parallel with optimized queries
     const [userResult, scansResult] = await Promise.allSettled([
-      User.findOne({ clerkId: userId })
+      User.findOne({ auth0Sub: userId })
         .select("credits")
         .maxTimeMS(2000)
         .lean({ virtuals: false, getters: false })

@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Map clerkId or email from event (we recommend initialize sent clerkId in metadata)
-    const metadataClerkId = metadata?.clerkId || eventData?.metadata?.clerkId || null;
+    // Map auth0Sub or email from event (we recommend initialize sent auth0Sub in metadata)
+    const metadataAuth0Id = metadata?.auth0Sub || eventData?.metadata?.auth0Sub || null;
     const email = eventData.customer?.email || eventData.customer_email || metadata?.email || null;
 
     if (String(status).toLowerCase() === "success") {
@@ -86,14 +86,14 @@ export async function POST(req: NextRequest) {
           status,
           processed: false,
           raw: eventData,
-          clerkId: metadataClerkId || undefined,
+          auth0Sub: metadataAuth0Id || undefined,
         });
       }
 
-      // Find user by clerkId first (if provided), otherwise by email
+      // Find user by auth0Sub first (if provided), otherwise by email
       let user = null;
-      if (metadataClerkId) {
-        user = await User.findOne({ clerkId: metadataClerkId });
+      if (metadataAuth0Id) {
+        user = await User.findOne({ auth0Sub: metadataAuth0Id });
       }
       if (!user && email) {
         user = await User.findOne({ email });
@@ -104,10 +104,10 @@ export async function POST(req: NextRequest) {
         await user.save();
 
         // Mark payment processed
-        await Payment.findOneAndUpdate({ reference }, { processed: true, clerkId: user.clerkId, status, credits: creditsToAdd, amount, currency, raw: eventData });
+        await Payment.findOneAndUpdate({ reference }, { processed: true, auth0Sub: user.auth0Sub, status, credits: creditsToAdd, amount, currency, raw: eventData });
       } else {
         // Save/update payment but leave processed=false so manual reconciliation is possible
-        await Payment.findOneAndUpdate({ reference }, { status, credits: creditsToAdd, amount, currency, raw: eventData, clerkId: metadataClerkId || undefined }, { upsert: true });
+        await Payment.findOneAndUpdate({ reference }, { status, credits: creditsToAdd, amount, currency, raw: eventData, auth0Sub: metadataAuth0Id || undefined }, { upsert: true });
       }
     }
 

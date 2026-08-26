@@ -49,9 +49,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Payment not successful" }, { status: 400 });
     }
 
-    // Read credits and clerkId from metadata (we passed them during initialize)
+    // Read credits and auth0Sub from metadata (we passed them during initialize)
     const creditsToAdd = Number(payment.metadata?.credits || 0);
-    const metadataClerkId = payment.metadata?.clerkId as string | undefined;
+    const metadataAuth0Id = payment.metadata?.auth0Sub as string | undefined;
 
     if (!creditsToAdd || creditsToAdd <= 0) {
       return NextResponse.json({ error: "No credits found in payment metadata" }, { status: 400 });
@@ -66,12 +66,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, credits: existing.credits, message: "Already processed" });
     }
 
-    // If metadata contains clerkId, ensure it matches authenticated user
-    if (metadataClerkId && metadataClerkId !== userId) {
+    // If metadata contains auth0Sub, ensure it matches authenticated user
+    if (metadataAuth0Id && metadataAuth0Id !== userId) {
       return NextResponse.json({ error: "Payment metadata does not match authenticated user" }, { status: 403 });
     }
 
-    const user = await User.findOne({ clerkId: userId });
+    const user = await User.findOne({ auth0Sub: userId });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -87,12 +87,12 @@ export async function POST(req: NextRequest) {
       existing.processed = true;
       existing.credits = creditsToAdd;
       existing.raw = payment;
-      existing.clerkId = metadataClerkId || userId;
+      existing.auth0Sub = metadataAuth0Id || userId;
       await existing.save();
     } else {
       await Payment.create({
         reference: payment.reference,
-        clerkId: metadataClerkId || userId,
+        auth0Sub: metadataAuth0Id || userId,
         email: user.email,
         amount: payment.amount || 0,
         currency: payment.currency || "USD",

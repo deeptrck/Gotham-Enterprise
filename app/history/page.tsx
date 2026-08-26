@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fetchScans, fetchResult } from "@/lib/api";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { mapToPdfDto, handleDownloadPDF } from "@/components/pdfUtils";
 import LoadingSpinner from "@/components/ui/loading-spinner";
 import * as Sentry from "@sentry/nextjs";
@@ -32,10 +32,12 @@ export default function HistoryPage() {
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { isSignedIn, isLoaded } = useUser();
+  const { user, isLoading } = useUser();
+  const isSignedIn = Boolean(user);
+  const isLoaded = !isLoading;
 
   useEffect(() => {
-    if (!isLoaded) return; // Clerk still hydrating — wait
+    if (!isLoaded) return; // Auth0 still hydrating — wait
     if (!isSignedIn) {
       window.location.href = "/login";
       return;

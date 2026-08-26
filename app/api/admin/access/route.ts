@@ -1,4 +1,4 @@
-﻿import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/auth";
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { getAdminEmailAllowlist, isEmailAllowlisted } from "@/lib/adminAccess";

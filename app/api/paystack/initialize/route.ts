@@ -12,7 +12,7 @@ interface PaymentPayload {
   currency: string;
   metadata: {
     credits: number;
-    clerkId: string;
+    auth0Sub: string;
   };
   callback_url?: string;
 }
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    const user = await User.findOne({ clerkId: userId });
+    const user = await User.findOne({ auth0Sub: userId });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       currency,
       metadata: {
         credits,
-        clerkId: userId,
+        auth0Sub: userId,
       },
     };
 

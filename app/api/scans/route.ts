@@ -4,8 +4,7 @@ import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, set
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
-import verifyMedia from "@/lib/realityDefender";
-import { SageMakerRuntimeClient, InvokeEndpointCommand } from "@aws-sdk/client-sagemaker-runtime";
+import { analyzeWithGothamModel, isGothamModelConfigured } from "@/lib/gothamModel";
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import ffmpegStatic from 'ffmpeg-static';
@@ -17,9 +16,9 @@ import path from "path";
 
 
 const BACKEND_API_URL = (
-  process.env.BACKEND_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://facedetectionsystem.onrender.com"
+  process.env.BACKEND_API_URL?.trim() ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
+  ""
 ).replace(/\/$/, "");
 
 function buildBackendUrl(path: string) {
@@ -36,12 +35,7 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
 );
 
 const CREDIT_COST_PER_SCAN = 1;
-const SAGEMAKER_ENDPOINT_NAME = process.env.SAGEMAKER_ENDPOINT_NAME || "";
-const SAGEMAKER_REGION = process.env.SAGEMAKER_REGION || "us-east-1";
 const VIDEO_FRAME_SAMPLE_COUNT = 3;
-
-const sagemakerClient = new SageMakerRuntimeClient({ region: SAGEMAKER_REGION });
-
 
 function hasAcceptedVideoExtension(name: string) {
   const lower = name.toLowerCase();
@@ -122,14 +116,12 @@ async function extractVideoFrames(videoBuffer: Buffer, count: number): Promise<B
 }
 
 async function invokeGothamEndpoint(frameBuffer: Buffer): Promise<{ label: string; score: number; confidence: number } | null> {
-  if (!SAGEMAKER_ENDPOINT_NAME) return null;
+  if (!isGothamModelConfigured()) return null;
   try {
-    const command = new InvokeEndpointCommand({ EndpointName: SAGEMAKER_ENDPOINT_NAME, ContentType: "application/x-image", Accept: "application/json", Body: frameBuffer });
-    const response = await sagemakerClient.send(command);
-    const bodyText = Buffer.from(response.Body as Uint8Array).toString("utf-8");
-    return JSON.parse(bodyText) as { label: string; score: number; confidence: number };
+    const result = await analyzeWithGothamModel(frameBuffer, "application/x-image");
+    return { label: result.label, score: result.score, confidence: result.confidence };
   } catch (error) {
-    console.error("SageMaker invocation failed:", error);
+    console.error("Proprietary Gotham model invocation failed:", error);
     return null;
   }
 }
@@ -155,7 +147,7 @@ async function consumeUserCredit(userId: string) {
   await connectToDatabase();
 
   const updatedUser = await User.findOneAndUpdate(
-    { clerkId: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
+    { auth0Sub: userId, credits: { $gte: CREDIT_COST_PER_SCAN } },
     { $inc: { credits: -CREDIT_COST_PER_SCAN, creditsUsed: CREDIT_COST_PER_SCAN, scanCount: 1 } },
     { new: true }
   ).select("credits creditsUsed scanCount");
@@ -164,7 +156,7 @@ async function consumeUserCredit(userId: string) {
     return { ok: true as const };
   }
 
-  const existingUser = await User.findOne({ clerkId: userId }).select("_id");
+  const existingUser = await User.findOne({ auth0Sub: userId }).select("_id");
   if (!existingUser) {
     return { ok: false as const, reason: "USER_NOT_FOUND" as const };
   }
@@ -175,12 +167,21 @@ async function consumeUserCredit(userId: string) {
 async function refundUserCredit(userId: string) {
   await connectToDatabase();
   await User.updateOne(
-    { clerkId: userId },
+    { auth0Sub: userId },
     { $inc: { credits: CREDIT_COST_PER_SCAN, creditsUsed: -CREDIT_COST_PER_SCAN, scanCount: -1 } }
   );
 }
 
 async function postVideoWithRetry(payload: FormData, attempts = 2) {
+  if (!BACKEND_API_URL) {
+    return {
+      ok: false as const,
+      status: 503,
+      body: "Legacy video backend is not configured.",
+      contentType: "application/json",
+    };
+  }
+
   let lastStatus = 503;
   let lastBody = "";
   let lastContentType = "application/json";
@@ -259,8 +260,9 @@ export async function GET(req: NextRequest) {
     let jobsPayload: { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> } = { jobs: {} };
     const degraded: string | null = null;
 
-    try {
-      const response = await fetch(buildBackendUrl("/jobs"), {
+    if (BACKEND_API_URL) {
+      try {
+        const response = await fetch(buildBackendUrl("/jobs"), {
         method: "GET",
         headers: getForwardHeaders(req),
         cache: "no-store",
@@ -272,11 +274,12 @@ export async function GET(req: NextRequest) {
       } else {
         jobsPayload = await response.json() as { jobs?: Record<string, { status?: string; filename?: string; age_sec?: number }> };
       }
-    } catch (error) {
-      // Backend unavailable, but we have cached RD-only scans - continue without error message
+          } catch (error) {
+        // Backend unavailable, but we have cached RD-only scans - continue without error message
+      }
     }
-
     const jobs = jobsPayload.jobs || {};
+
     const maxScanEntries = 200;
 
     const backendScans = Object.entries(jobs)
@@ -306,7 +309,7 @@ export async function GET(req: NextRequest) {
       });
 
     const rdOnlyScans = listUserJobMeta(userId)
-      .filter((meta) => meta.source === "fakecatcher")
+      .filter((meta) => meta.source === "fakecatcher" || meta.source === "gotham-model" || meta.source === "rd-only")
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, maxScanEntries)
       .map((meta) => {
@@ -475,6 +478,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Fail closed until the proprietary AWS model endpoint is configured. Do not
+    // silently route customer media to a temporary third-party detector.
+    if (!isGothamModelConfigured()) {
+      return NextResponse.json(
+        { error: "Gotham verification is temporarily unavailable while the AWS model endpoint is being configured." },
+        { status: 503 }
+      );
+    }
+
     const chargeResult = await consumeUserCredit(userId);
     if (!chargeResult.ok) {
       if (chargeResult.reason === "USER_NOT_FOUND") {
@@ -519,27 +531,35 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const rdBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-        const rdResponse = await verifyMedia({ fileBuffer: rdBuffer, fileType: "image" });
-
+        const mediaBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+        const modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
+        const modelStatus = modelResult.label === "FAKE"
+          ? "MANIPULATED"
+          : modelResult.label === "REAL"
+          ? "AUTHENTIC"
+          : "SUSPICIOUS";
         rdOutcome = {
-          requestId: rdResponse.requestId,
-          status: rdResponse.status,
-          score: rdResponse.score,
-          models: rdResponse.models.map((m) => ({
-            name: m.name,
-            status: m.status,
-            score: m.score,
-          })),
+          status: modelStatus,
+          score: modelResult.score,
+          models: [{
+            name: modelResult.model,
+            status: modelStatus,
+            score: modelResult.score,
+          }],
         };
-      } catch (rdError) {
-        console.error("Reality Defender scan failed:", rdError);
+      } catch (providerError) {
+        console.error("Image provider failed:", providerError);
         rdOutcome = {
           status: "ERROR",
           score: 0,
           models: [],
-          error: rdError instanceof Error ? rdError.message : String(rdError),
+          error: providerError instanceof Error ? providerError.message : String(providerError),
         };
+      }
+
+      if (rdOutcome.status === "ERROR" && chargedUserId) {
+        await refundUserCredit(chargedUserId);
+        chargedUserId = null;
       }
 
       const scanId = `rd-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -547,7 +567,7 @@ export async function POST(req: NextRequest) {
         userId,
         fileName,
         fileType,
-        source: "rd-only",
+        source: isGothamModelConfigured() ? "gotham-model" : "rd-only",
         createdAt: new Date().toISOString(),
         imageData,
       });
@@ -575,7 +595,7 @@ export async function POST(req: NextRequest) {
         finalConfidence = 0;
       }
 
-      const modelsUsed = ["RealityDefender"];
+      const modelsUsed = rdOutcome.models.map((model) => model.name);
       const rdUsed = rdOutcome.status !== "DISABLED" && rdOutcome.status !== "ERROR";
       
       // Save to MongoDB for dashboard
@@ -615,7 +635,8 @@ export async function POST(req: NextRequest) {
           confidenceScore: finalConfidence,
           dualModel: {
             fakecatcher: false,
-            realityDefender: rdUsed,
+            realityDefender: false,
+            proprietaryGotham: rdUsed,
           },
           rd: rdOutcome.status !== "ERROR" ? {
             requestId: rdOutcome.requestId,

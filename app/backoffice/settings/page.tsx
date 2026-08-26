@@ -360,7 +360,7 @@ export default function SettingsPage() {
                 </Select>
               </div>
               <div style={{ fontSize: 11, color: "var(--color-text-secondary)", padding: "8px 10px", background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)" }}>
-                An invite email will be sent via Clerk. The user must complete email verification and set up MFA before access is granted.
+                An invite email will be sent via Auth0. The user must complete email verification and set up MFA before access is granted.
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                 <Btn variant="primary" style={{ flex: 1 }} onClick={() => { alert("Invite sent successfully!"); setShowInvite(false); }}>Send invite</Btn>

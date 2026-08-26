@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -14,7 +14,8 @@ type TabType = (typeof tabLabels)[number];
 
 export default function ApiConsolePage() {
   const router = useRouter();
-  const { isSignedIn, user } = useUser();
+  const { user } = useUser();
+  const isSignedIn = Boolean(user);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [usage, setUsage] = useState<{

@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IUserAccess extends Document {
-  clerkId: string;
+  auth0Sub: string;
   email: string;
   accessType: "page_visit" | "api_call";
   routePath: string; // e.g., "/dashboard", "/api/results"
@@ -14,7 +14,7 @@ export interface IUserAccess extends Document {
 
 const userAccessSchema = new Schema<IUserAccess>(
   {
-    clerkId: { type: String, required: true, index: true },
+    auth0Sub: { type: String, required: true, index: true },
     email: { type: String, required: true, index: true },
     accessType: {
       type: String,
@@ -31,7 +31,7 @@ const userAccessSchema = new Schema<IUserAccess>(
 );
 
 // Create a compound index for efficient queries
-userAccessSchema.index({ clerkId: 1, lastAccessedAt: -1 });
+userAccessSchema.index({ auth0Sub: 1, lastAccessedAt: -1 });
 userAccessSchema.index({ email: 1, lastAccessedAt: -1 });
 userAccessSchema.index({ lastAccessedAt: -1 }); // For finding active users
 
