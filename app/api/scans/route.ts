@@ -4,7 +4,6 @@ import { getJobMeta, getJobFakeCatcherAnalysis, listUserJobMeta, setJobMeta, set
 import { connectToDatabase } from "@/lib/db";
 import { User } from "@/lib/models/User";
 import { VerificationResult } from "@/lib/models/VerificationResult";
-import verifyMedia from "@/lib/realityDefender";
 import { analyzeWithGothamModel, isGothamModelConfigured } from "@/lib/gothamModel";
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -36,7 +35,6 @@ const BACKEND_REQUEST_TIMEOUT_MS = Math.max(
 );
 
 const CREDIT_COST_PER_SCAN = 1;
-const REALITY_DEFENDER_ENABLED = (process.env.REALITY_DEFENDER_ENABLED ?? "true").toLowerCase() === "true";
 const VIDEO_FRAME_SAMPLE_COUNT = 3;
 
 function hasAcceptedVideoExtension(name: string) {
@@ -480,11 +478,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Do not charge a user for an image scan when the temporary provider is disabled
-    // and the proprietary provider adapter is not yet configured in this route.
-    if (fileType === "image" && !REALITY_DEFENDER_ENABLED && !isGothamModelConfigured()) {
+    // Fail closed until the proprietary AWS model endpoint is configured. Do not
+    // silently route customer media to a temporary third-party detector.
+    if (!isGothamModelConfigured()) {
       return NextResponse.json(
-        { error: "Image verification is temporarily unavailable while the Gotham model is being configured." },
+        { error: "Gotham verification is temporarily unavailable while the AWS model endpoint is being configured." },
         { status: 503 }
       );
     }
@@ -534,35 +532,21 @@ export async function POST(req: NextRequest) {
 
       try {
         const mediaBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-        if (isGothamModelConfigured()) {
-          const modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
-          const modelStatus = modelResult.label === "FAKE"
-            ? "MANIPULATED"
-            : modelResult.label === "REAL"
-            ? "AUTHENTIC"
-            : "SUSPICIOUS";
-          rdOutcome = {
+        const modelResult = await analyzeWithGothamModel(mediaBuffer, uploadedFile.type || "application/octet-stream");
+        const modelStatus = modelResult.label === "FAKE"
+          ? "MANIPULATED"
+          : modelResult.label === "REAL"
+          ? "AUTHENTIC"
+          : "SUSPICIOUS";
+        rdOutcome = {
+          status: modelStatus,
+          score: modelResult.score,
+          models: [{
+            name: modelResult.model,
             status: modelStatus,
             score: modelResult.score,
-            models: [{
-              name: modelResult.model,
-              status: modelStatus,
-              score: modelResult.score,
-            }],
-          };
-        } else {
-          const rdResponse = await verifyMedia({ fileBuffer: mediaBuffer, fileType: "image" });
-          rdOutcome = {
-            requestId: rdResponse.requestId,
-            status: rdResponse.status,
-            score: rdResponse.score,
-            models: rdResponse.models.map((m) => ({
-              name: m.name,
-              status: m.status,
-              score: m.score,
-            })),
-          };
-        }
+          }],
+        };
       } catch (providerError) {
         console.error("Image provider failed:", providerError);
         rdOutcome = {
@@ -606,7 +590,7 @@ export async function POST(req: NextRequest) {
         finalConfidence = 0;
       }
 
-      const modelsUsed = ["RealityDefender"];
+      const modelsUsed = rdOutcome.models.map((model) => model.name);
       const rdUsed = rdOutcome.status !== "DISABLED" && rdOutcome.status !== "ERROR";
       
       // Save to MongoDB for dashboard
@@ -646,7 +630,8 @@ export async function POST(req: NextRequest) {
           confidenceScore: finalConfidence,
           dualModel: {
             fakecatcher: false,
-            realityDefender: rdUsed,
+            realityDefender: false,
+            proprietaryGotham: rdUsed,
           },
           rd: rdOutcome.status !== "ERROR" ? {
             requestId: rdOutcome.requestId,
