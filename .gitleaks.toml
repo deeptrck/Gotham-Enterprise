@@ -1,0 +1,21 @@
+title = "Gotham Enterprise secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secret templates and generated build metadata"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)\.env\.(example|sample|template)$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)dist-workers/''',
+  '''(^|/)coverage/''',
+  '''(^|/)tsconfig\.tsbuildinfo$'''
+]
+regexes = [
+  '''<[^>]+>''',
+  '''replace[-_ ]with[-_ ]''',
+  '''your[-_ ](api[-_ ]key|secret|token)'''
+]
