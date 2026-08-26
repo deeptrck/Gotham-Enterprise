@@ -309,7 +309,7 @@ export async function GET(req: NextRequest) {
       });
 
     const rdOnlyScans = listUserJobMeta(userId)
-      .filter((meta) => meta.source === "fakecatcher")
+      .filter((meta) => meta.source === "fakecatcher" || meta.source === "gotham-model" || meta.source === "rd-only")
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, maxScanEntries)
       .map((meta) => {
@@ -555,6 +555,11 @@ export async function POST(req: NextRequest) {
           models: [],
           error: providerError instanceof Error ? providerError.message : String(providerError),
         };
+      }
+
+      if (rdOutcome.status === "ERROR" && chargedUserId) {
+        await refundUserCredit(chargedUserId);
+        chargedUserId = null;
       }
 
       const scanId = `rd-img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
